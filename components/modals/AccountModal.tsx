@@ -1,0 +1,334 @@
+import React, { useState } from 'react';
+import { UserProfile, UserSettings, AddNotificationHandler } from '../../types';
+import { X, UserCircle, Key, Zap, ShieldCheck, Save, AlertTriangle, FileText, Lock, CheckSquare, RotateCcw, RefreshCw, Wallet, Server, Network, Activity } from 'lucide-react'; // Added RotateCcw, RefreshCw, Wallet, Server, Network, Activity
+
+interface AccountModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  userProfile: UserProfile;
+  setUserProfile: (profile: UserProfile | ((val: UserProfile) => UserProfile)) => void;
+  addNotification: AddNotificationHandler;
+}
+
+// Mock mnemonic generation for demo
+const generateMockMnemonic = () => {
+    const words = ["apple", "banana", "cherry", "date", "elderberry", "fig", "grape", "honeydew", "kiwi", "lemon", "mango", "nectarine", "orange", "papaya", "quince", "raspberry", "strawberry", "tangerine", "ugli", "vanilla", "watermelon", "xigua", "yuzu", "zucchini"];
+    return Array(12).fill(null).map(() => words[Math.floor(Math.random() * words.length)]).join(' ');
+}
+
+// Generate new mock keys
+const generateNewMockKeys = (prefix: string) => {
+    return {
+        privateKey: `${prefix}_SK_` + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15) + Date.now().toString(36).slice(-6),
+        publicKey: `${prefix}_PK_` + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15) + Date.now().toString(36).slice(-6),
+    }
+}
+
+export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose, userProfile, setUserProfile, addNotification }) => {
+  const [currentSettings, setCurrentSettings] = useState<UserSettings>(userProfile.settings);
+  const [showKeys, setShowKeys] = useState(false);
+
+  // Conceptual Wallet Setup State
+  const [mockMnemonic, setMockMnemonic] = useState<string | null>(null);
+  const [backupConfirmed1, setBackupConfirmed1] = useState(false);
+  const [backupConfirmed2, setBackupConfirmed2] = useState(false);
+  const [walletPassword, setWalletPassword] = useState('');
+  
+  // Mnemonic restoration state
+  const [restoreMnemonicInput, setRestoreMnemonicInput] = useState('');
+
+  // Mock Node Status State
+  const [nodeStatus, setNodeStatus] = useState<string>("N/A");
+  const [blockchainHeight, setBlockchainHeight] = useState<string>("N/A");
+  const [walletSyncHeight, setWalletSyncHeight] = useState<string>("N/A");
+
+  // Mock Wallet Balance State
+  const [walletBalance, setWalletBalance] = useState<string>("N/A");
+
+
+  const handleSettingChange = <K extends keyof UserSettings,>(key: K, value: UserSettings[K]) => {
+    setCurrentSettings(prev => ({ ...prev, [key]: value }));
+  };
+
+  const handleSaveChanges = () => {
+    setUserProfile(prev => ({ ...prev, settings: currentSettings }));
+    addNotification('Account settings saved successfully!', 'success');
+  };
+  
+  const handleGenerateMnemonic = () => {
+    setMockMnemonic(generateMockMnemonic());
+    const newKeys = generateNewMockKeys("GENERATED");
+    setUserProfile(prev => ({
+        ...prev,
+        moneroPrivateKey: newKeys.privateKey,
+        moneroPublicKey: newKeys.publicKey,
+    }));
+    setBackupConfirmed1(false);
+    setBackupConfirmed2(false);
+    setShowKeys(true); // Show keys after generating new ones
+    addNotification("Mock mnemonic generated and demo keys updated. Securely back it up!", "info");
+  }
+
+  const handleConfirmWalletSetup = () => {
+    if (mockMnemonic && !backupConfirmed1 && !backupConfirmed2) {
+        addNotification("Please confirm you have backed up the mnemonic phrase.", "warning");
+        return;
+    }
+    if (mockMnemonic && (!backupConfirmed1 || !backupConfirmed2)) {
+        addNotification("Please acknowledge both backup confirmations.", "warning");
+        return;
+    }
+     if (mockMnemonic && !walletPassword) {
+        addNotification("Please set a conceptual wallet encryption password.", "warning");
+        return;
+    }
+    addNotification("Conceptual wallet setup complete! (Demo keys were updated when mnemonic was generated)", "success");
+    setMockMnemonic(null); 
+    setBackupConfirmed1(false);
+    setBackupConfirmed2(false);
+    setWalletPassword('');
+  }
+
+  const handleRestoreMnemonic = () => {
+    if (!restoreMnemonicInput.trim()) {
+        addNotification("Please enter a mnemonic phrase to restore.", "warning");
+        return;
+    }
+    // In a real app, validate mnemonic and derive keys. Here, just set new mock keys.
+    const newKeys = generateNewMockKeys("RESTORED");
+     setUserProfile(prev => ({
+        ...prev,
+        moneroPrivateKey: newKeys.privateKey,
+        moneroPublicKey: newKeys.publicKey,
+    }));
+    setShowKeys(true); // Show keys after restoring
+    addNotification(`Conceptual wallet restored with demo phrase "${restoreMnemonicInput.substring(0,15)}..."! Demo keys updated.`, 'success');
+    setRestoreMnemonicInput('');
+  }
+
+  const handleRefreshNodeStatus = () => {
+    const statuses = ["Connected (Mock)", "Connecting... (Mock)", "Disconnected (Mock)"];
+    setNodeStatus(statuses[Math.floor(Math.random() * statuses.length)]);
+    const height = 2000000 + Math.floor(Math.random() * 500000);
+    setBlockchainHeight(height.toLocaleString());
+    setWalletSyncHeight((height - Math.floor(Math.random() * 10)).toLocaleString());
+    addNotification("Mock node status updated.", "info");
+  }
+
+  const handleRefreshBalance = () => {
+    setWalletBalance(`${(Math.random() * 10).toFixed(6)} XMR`);
+    addNotification("Mock wallet balance updated.", "info");
+  }
+
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50">
+      <div className="bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-semibold text-teal-400 flex items-center">
+            <UserCircle size={28} className="mr-2" /> Account & Settings
+          </h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
+            <X size={24} />
+          </button>
+        </div>
+
+        <div className="space-y-6">
+          <div>
+            <p className="text-sm text-gray-400">Username</p>
+            <p className="text-lg text-white">{userProfile.username}</p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-400">Reputation Score (Mock)</p>
+            <p className="text-lg text-white flex items-center">
+              {userProfile.reputationScore}/100 
+              <ShieldCheck size={20} className="ml-2 text-green-400" />
+            </p>
+          </div>
+
+          {/* Conceptual Wallet Setup Section */}
+          <div className="border-t border-gray-700 pt-4">
+            <h3 className="text-lg font-semibold text-gray-200 mb-2 flex items-center"><FileText size={20} className="mr-2 text-teal-400" />Conceptual Wallet Management</h3>
+            <p className="text-xs text-gray-400 mb-3">This section simulates generating, backing up, and restoring a Monero wallet. New demo keys are assigned on generation/restoration.</p>
+            
+            {!mockMnemonic ? (
+              <button
+                onClick={handleGenerateMnemonic}
+                className="w-full px-4 py-2 bg-orange-500 hover:bg-orange-400 text-white rounded-md transition-colors flex items-center justify-center mb-2"
+              >
+                <Zap size={18} className="mr-2" /> Generate New Mnemonic & Demo Keys
+              </button>
+            ) : (
+              <div className="bg-gray-700 p-4 rounded-md space-y-3">
+                <p className="text-sm text-yellow-300 font-semibold">Your Mock Mnemonic Phrase:</p>
+                <div className="bg-gray-900 p-3 rounded font-mono text-center text-orange-300 text-sm break-words">
+                  {mockMnemonic}
+                </div>
+                <p className="text-xs text-red-400 font-bold">CRITICAL: Write these words down in order and store them in multiple secure, offline locations. This is the ONLY way to recover your conceptual wallet.</p>
+                
+                <label className="flex items-start text-sm text-gray-300 cursor-pointer">
+                  <input type="checkbox" checked={backupConfirmed1} onChange={() => setBackupConfirmed1(!backupConfirmed1)} className="mr-2 mt-1 accent-teal-500" />
+                  I have written these words down securely.
+                </label>
+                <label className="flex items-start text-sm text-gray-300 cursor-pointer">
+                  <input type="checkbox" checked={backupConfirmed2} onChange={() => setBackupConfirmed2(!backupConfirmed2)} className="mr-2 mt-1 accent-teal-500" />
+                  I understand these words are my sole responsibility and Aegis Protocol cannot recover them.
+                </label>
+
+                <div>
+                  <label htmlFor="walletPassword" className="block text-sm font-medium text-gray-300 mb-1">Set Wallet Encryption Password (Conceptual)</label>
+                  <input
+                      type="password"
+                      id="walletPassword"
+                      value={walletPassword}
+                      onChange={(e) => setWalletPassword(e.target.value)}
+                      className="w-full bg-gray-600 text-white border border-gray-500 rounded-md p-2 focus:ring-teal-500 focus:border-teal-500"
+                      placeholder="Enter a strong password"
+                  />
+                   <p className="text-xs text-gray-500 mt-1">This would encrypt your local wallet file.</p>
+                </div>
+
+                <button
+                  onClick={handleConfirmWalletSetup}
+                  disabled={!backupConfirmed1 || !backupConfirmed2 || !walletPassword}
+                  className="w-full px-4 py-2 bg-teal-500 hover:bg-teal-400 text-white rounded-md transition-colors flex items-center justify-center disabled:bg-gray-500 disabled:cursor-not-allowed"
+                >
+                  <CheckSquare size={18} className="mr-2" /> Confirm Wallet Setup
+                </button>
+                 <button
+                  onClick={() => { setMockMnemonic(null); setBackupConfirmed1(false); setBackupConfirmed2(false); setWalletPassword('');}}
+                  className="w-full mt-2 px-4 py-2 bg-gray-600 hover:bg-gray-500 text-gray-300 rounded-md transition-colors flex items-center justify-center"
+                >
+                   Cancel Mnemonic Generation
+                </button>
+              </div>
+            )}
+
+            {/* Restore Mnemonic Section */}
+             {!mockMnemonic && (
+                <div className="mt-4 pt-4 border-t border-gray-700">
+                    <h4 className="text-md font-semibold text-gray-300 mb-2">Restore Wallet from Mnemonic (Mock)</h4>
+                    <textarea
+                        value={restoreMnemonicInput}
+                        onChange={(e) => setRestoreMnemonicInput(e.target.value)}
+                        rows={2}
+                        className="w-full bg-gray-700 text-white border border-gray-600 rounded-md p-2 focus:ring-teal-500 focus:border-teal-500 mb-2"
+                        placeholder="Enter your 12 or 24 word mnemonic phrase here..."
+                    />
+                    <button
+                        onClick={handleRestoreMnemonic}
+                        className="w-full px-4 py-2 bg-sky-500 hover:bg-sky-400 text-white rounded-md transition-colors flex items-center justify-center"
+                    >
+                        <RotateCcw size={18} className="mr-2" /> Restore Wallet & Update Demo Keys
+                    </button>
+                </div>
+            )}
+          </div>
+
+
+          <div className="border-t border-gray-700 pt-4">
+            <h3 className="text-lg font-semibold text-gray-200 mb-2 flex items-center"><Key size={20} className="mr-2 text-teal-400"/>Monero Keys (DEMO ONLY)</h3>
+            <div className="bg-yellow-900 border border-yellow-700 p-3 rounded-md mb-3">
+                <p className="text-sm text-yellow-300 mb-2 flex items-start">
+                    <AlertTriangle size={28} className="inline mr-2 flex-shrink-0" /> 
+                    <span><strong>IMPORTANT:</strong> These are placeholder strings for demonstration. <strong>NEVER share real private keys.</strong> New demo keys are assigned when generating or restoring a mnemonic.</span>
+                </p>
+            </div>
+
+            <button 
+              onClick={() => setShowKeys(!showKeys)}
+              className="text-sm text-teal-400 hover:text-teal-300 mb-2"
+            >
+              {showKeys ? 'Hide' : 'Show'} Current Demo Keys
+            </button>
+            {showKeys && (
+              <div className="space-y-2 bg-gray-700 p-3 rounded-md">
+                <div>
+                  <p className="text-xs text-gray-400 flex items-center"><Lock size={12} className="mr-1" /> Private Key (View)</p>
+                  <p className="text-xs text-red-400 break-all font-mono">{userProfile.moneroPrivateKey}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400 flex items-center"><Key size={12} className="mr-1" /> Public Key</p>
+                  <p className="text-xs text-green-400 break-all font-mono">{userProfile.moneroPublicKey}</p>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <div className="border-t border-gray-700 pt-4">
+             <h3 className="text-lg font-semibold text-gray-200 mb-3 flex items-center"><Network size={20} className="mr-2 text-teal-400"/>Network & Node Settings (Conceptual)</h3>
+            <div className="space-y-4">
+                <div>
+                    <label htmlFor="moneroNodeUrl" className="block text-sm font-medium text-gray-300 mb-1">Monero Full Node URL</label>
+                    <input
+                        type="text"
+                        id="moneroNodeUrl"
+                        value={currentSettings.moneroNodeUrl}
+                        onChange={(e) => handleSettingChange('moneroNodeUrl', e.target.value)}
+                        className="w-full bg-gray-700 text-white border border-gray-600 rounded-md p-2 focus:ring-teal-500 focus:border-teal-500"
+                        placeholder="e.g., http://127.0.0.1:18081"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Client should interact with a user-run full Monero node.</p>
+                </div>
+
+                <div className="bg-gray-700 p-3 rounded-md space-y-2">
+                    <div className="flex justify-between items-center">
+                        <h4 className="text-md font-semibold text-gray-300 flex items-center"><Server size={18} className="mr-2"/>Node Status (Mock)</h4>
+                        <button onClick={handleRefreshNodeStatus} className="text-xs px-2 py-1 bg-blue-500 hover:bg-blue-400 text-white rounded-md flex items-center">
+                            <RefreshCw size={14} className="mr-1"/>Refresh
+                        </button>
+                    </div>
+                    <p className="text-sm text-gray-400">Status: <span className="text-gray-200">{nodeStatus}</span></p>
+                    <p className="text-sm text-gray-400">Blockchain Height: <span className="text-gray-200">{blockchainHeight}</span></p>
+                    <p className="text-sm text-gray-400">Wallet Sync Height: <span className="text-gray-200">{walletSyncHeight}</span></p>
+                </div>
+
+                 <div className="bg-gray-700 p-3 rounded-md space-y-2">
+                     <div className="flex justify-between items-center">
+                        <h4 className="text-md font-semibold text-gray-300 flex items-center"><Wallet size={18} className="mr-2"/>Wallet Balance (Mock)</h4>
+                        <button onClick={handleRefreshBalance} className="text-xs px-2 py-1 bg-blue-500 hover:bg-blue-400 text-white rounded-md flex items-center">
+                            <RefreshCw size={14} className="mr-1"/>Refresh
+                        </button>
+                    </div>
+                    <p className="text-sm text-gray-400">Balance: <span className="text-green-400 font-semibold">{walletBalance}</span></p>
+                 </div>
+
+
+                <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-gray-300 flex items-center"><ShieldCheck size={18} className="mr-2"/>Use Tor for Network Traffic</span>
+                    <button
+                        onClick={() => handleSettingChange('useTor', !currentSettings.useTor)}
+                        className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                        currentSettings.useTor ? 'bg-teal-500 text-white hover:bg-teal-600' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+                        }`}
+                    >
+                        {currentSettings.useTor ? 'Enabled' : 'Disabled'}
+                    </button>
+                </div>
+                 <p className="text-xs text-gray-500">Tor integration enhances privacy (conceptual feature).</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-8 flex justify-end space-x-3 border-t border-gray-700 pt-6">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 text-gray-300 bg-gray-600 hover:bg-gray-500 rounded-md transition-colors"
+          >
+            Close
+          </button>
+          <button
+            type="button"
+            onClick={handleSaveChanges}
+            className="px-4 py-2 bg-teal-500 hover:bg-teal-400 text-white rounded-md transition-colors flex items-center"
+          >
+            <Save size={18} className="mr-2" /> Save Settings
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
