@@ -104,3 +104,74 @@ export interface AppNotification {
 }
 
 export type AddNotificationHandler = (message: string, type: NotificationType) => void;
+
+// Monero Transaction and RPC Related Types
+
+export interface MoneroSubaddressIndex {
+  major: number; // Account index
+  minor: number; // Address index within the account
+}
+
+export interface MoneroTransactionDestination {
+  address: string;
+  amount: number; // Atomic units
+}
+
+export type MoneroTransferType = "in" | "out" | "pending" | "failed" | "pool";
+
+export interface MoneroTransaction {
+  txid: string;           // Transaction ID (hash)
+  type: MoneroTransferType; // Type of transfer
+  amount: number;         // Primary amount for this part of the transaction (atomic units)
+  fee: number;            // Transaction fee (atomic units)
+  height: number;         // Block height of confirmation (0 if not mined or pending)
+  timestamp: number;      // POSIX timestamp of confirmation or submission
+  unlock_time: number;    // Number of blocks until safely spendable
+  
+  address?: string;        // The other party's address for outgoing, or own subaddress for incoming.
+  payment_id: string;     // Payment ID (often "0000000000000000" if not set)
+  note: string;           // User-provided note
+  
+  confirmations?: number;  // Number of confirmations (can be 0 for pending/pool)
+  locked?: boolean;        // Whether the transaction/outputs are locked
+  
+  subaddr_index?: MoneroSubaddressIndex;       // Own subaddress index involved
+  subaddr_indices?: MoneroSubaddressIndex[]; // Multiple own subaddresses involved (less common for a single tx entry)
+  
+  amounts?: number[];      // If a single entry represents multiple distinct amounts (e.g. to multiple subaddresses in one tx)
+  
+  // Primarily for outgoing transfers
+  destinations?: MoneroTransactionDestination[]; 
+  
+  // Optional fields that might be present
+  double_spend_seen?: boolean;
+  suggested_confirmations_threshold?: number;
+  
+  // Fields that might be more relevant for incoming transfers if enriched later,
+  // but `get_transfers` provides them per transfer entry
+  key_image?: string; 
+  label?: string;          // Label of the subaddress
+  spent?: boolean;         // If this specific output (for incoming) has been spent
+}
+
+export interface GetTransfersParams {
+  in?: boolean;
+  out?: boolean;
+  pending?: boolean;
+  failed?: boolean;
+  pool?: boolean;
+  filter_by_height?: boolean;
+  min_height?: number;
+  max_height?: number;
+  account_index?: number;
+  subaddr_indices?: number[]; // Array of minor indices if account_index is specified
+  all_accounts?: boolean;
+}
+
+export interface GetTransfersResponse {
+  in?: MoneroTransaction[];
+  out?: MoneroTransaction[];
+  pending?: MoneroTransaction[];
+  failed?: MoneroTransaction[];
+  pool?: MoneroTransaction[];
+}
