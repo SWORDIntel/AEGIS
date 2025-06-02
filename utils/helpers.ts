@@ -1,5 +1,5 @@
 
-import { Escrow, UserProfile } from '../types'; // Added import
+import { Escrow, UserProfile, MoneroTransaction, GetTransfersParams, GetTransfersResponse } from '../types'; // Added MoneroTransaction, GetTransfersParams, GetTransfersResponse
 
 // Basic ID generator (replace with a robust library like UUID in a real app)
 export const generateId = (): string => {
@@ -146,5 +146,65 @@ export async function decryptMnemonic(encryptedData: string, password: string): 
   } catch (error) {
     console.error('Decryption failed:', error);
     throw new Error('Decryption failed. Invalid password or corrupted data.');
+  }
+}
+
+// Monero Wallet RPC Utilities
+
+/**
+ * Calls the get_transfers method on a Monero wallet RPC.
+ * @param rpcUrl The URL of the monero-wallet-rpc endpoint (e.g., http://127.0.0.1:18082/json_rpc).
+ * @param params Parameters for the get_transfers method.
+ * @returns A Promise that resolves to the GetTransfersResponse.
+ */
+export async function getWalletTransfers(
+  rpcUrl: string,
+  params: GetTransfersParams
+): Promise<GetTransfersResponse> {
+  const requestBody = {
+    jsonrpc: "2.0",
+    id: "0",
+    method: "get_transfers",
+    params: params,
+  };
+
+  try {
+    const response = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Network response was not ok: ${response.status} ${response.statusText}`);
+    }
+
+    const responseData = await response.json();
+
+    if (responseData.error) {
+      throw new Error(`RPC Error: ${responseData.error.message} (Code: ${responseData.error.code})`);
+    }
+
+    // The result field itself is expected to be the GetTransfersResponse
+    // The structure is like: { "in": [...], "pool": [...] }
+    // So, we directly return responseData.result
+    if (!responseData.result) {
+        // This case might happen if the RPC call is successful but returns an empty result (e.g. no transfers)
+        // or if the structure is unexpectedly different.
+        // Depending on strictness, one might throw an error or return a default/empty response.
+        // For now, assume an empty result is valid and means no transfers matched.
+        return { }; // Or return responseData.result if it exists but is empty e.g. {}
+    }
+    
+    return responseData.result as GetTransfersResponse;
+
+  } catch (error) {
+    console.error('Error fetching wallet transfers:', error);
+    if (error instanceof Error) {
+      throw error; // Re-throw the error to be handled by the caller
+    }
+    throw new Error('An unknown error occurred while fetching wallet transfers.');
   }
 }

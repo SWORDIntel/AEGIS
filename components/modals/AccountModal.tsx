@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'; // Added useEffect
-import { UserProfile, UserSettings, AddNotificationHandler } from '../../types';
-import { X, UserCircle, Key, Zap, ShieldCheck, Save, AlertTriangle, FileText, Lock, CheckSquare, RotateCcw, RefreshCw, Wallet, Server, Network, Activity, Unlock } from 'lucide-react'; // Added RotateCcw, RefreshCw, Wallet, Server, Network, Activity, Unlock
-import { encryptMnemonic, decryptMnemonic } from '../../utils/helpers';
+import { UserProfile, UserSettings, AddNotificationHandler, MoneroTransaction, GetTransfersParams } from '../../types'; // Added MoneroTransaction, GetTransfersParams
+import { X, UserCircle, Key, Zap, ShieldCheck, Save, AlertTriangle, FileText, Lock, CheckSquare, RotateCcw, RefreshCw, Wallet, Server, Network, Activity, Unlock, List } from 'lucide-react'; // Added RotateCcw, RefreshCw, Wallet, Server, Network, Activity, Unlock, List
+import { encryptMnemonic, decryptMnemonic, getWalletTransfers, formatDate } from '../../utils/helpers'; // Added getWalletTransfers and formatDate
 import { useLocalStorage } from '../../hooks/useLocalStorage'; // Assuming this path
 
 interface AccountModalProps {
@@ -51,6 +51,11 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose, use
 
   // Mock Wallet Balance State
   const [walletBalance, setWalletBalance] = useState<string>("N/A");
+
+  // Transaction Scanning State
+  const [scannedTransactions, setScannedTransactions] = useState<MoneroTransaction[]>([]);
+  const [isScanningTransactions, setIsScanningTransactions] = useState(false);
+  // const [lastScannedHeight, setLastScannedHeight] = useState<number | null>(null); // Optional for future optimization
 
   useEffect(() => {
     if (encryptedMnemonicLS && !mockMnemonic && !userProfile.moneroPrivateKey) { // Only prompt for decryption if no mnemonic is active AND no keys are loaded (implying wallet is locked)
@@ -203,6 +208,55 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose, use
     addNotification("Mock wallet balance updated.", "info");
   }
 
+  const handleScanTransactions = async () => {
+    if (!currentSettings.moneroNodeUrl) {
+      addNotification("Monero Node URL is not set. Please configure it in settings.", "warning");
+      return;
+    }
+    // As discussed, private view key and address are not directly needed for get_transfers
+    // if the wallet is open in the RPC server.
+
+    setIsScanningTransactions(true);
+    addNotification("Scanning transactions...", "info");
+
+    const params: GetTransfersParams = {
+      in: true,
+      out: true,
+      pool: true,
+      pending: true,
+      failed: false, // Set to true if you want to see failed transactions
+      account_index: 0, // Assuming primary account
+      // filter_by_height: !!lastScannedHeight, // Future optimization
+      // min_height: lastScannedHeight ? lastScannedHeight + 1 : undefined, // Future optimization
+    };
+
+    try {
+      const response = await getWalletTransfers(currentSettings.moneroNodeUrl + (currentSettings.moneroNodeUrl.endsWith('/') ? 'json_rpc' : '/json_rpc'), params);
+      let allTransactions: MoneroTransaction[] = [];
+
+      if (response.in) allTransactions = allTransactions.concat(response.in);
+      if (response.out) allTransactions = allTransactions.concat(response.out);
+      if (response.pool) allTransactions = allTransactions.concat(response.pool);
+      if (response.pending) allTransactions = allTransactions.concat(response.pending);
+      if (response.failed) allTransactions = allTransactions.concat(response.failed); // If requested
+
+      allTransactions.sort((a, b) => b.timestamp - a.timestamp); // Newest first
+
+      setScannedTransactions(allTransactions);
+      if (allTransactions.length > 0) {
+         addNotification(`${allTransactions.length} transaction(s) loaded.`, 'success');
+        // const latestTx = allTransactions.reduce((latest, tx) => tx.height > latest.height ? tx : latest, allTransactions[0]);
+        // if (latestTx.height > 0) setLastScannedHeight(latestTx.height); // Future optimization
+      } else {
+        addNotification('No new transactions found.', 'info');
+      }
+    } catch (error: any) {
+      console.error("Error scanning transactions:", error);
+      addNotification(`Error scanning transactions: ${error.message || 'Unknown error'}`, 'error');
+    } finally {
+      setIsScanningTransactions(false);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -428,6 +482,63 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose, use
                     <p className="text-sm text-gray-400">Balance: <span className="text-green-400 font-semibold">{walletBalance}</span></p>
                  </div>
 
+                {/* Transaction Scanning Section */}
+                <div className="bg-gray-700 p-3 rounded-md space-y-2">
+                    <div className="flex justify-between items-center">
+                        <h4 className="text-md font-semibold text-gray-300 flex items-center"><List size={18} className="mr-2"/>Recent Transactions</h4>
+                        <button 
+                            onClick={handleScanTransactions} 
+                            disabled={isScanningTransactions || !currentSettings.moneroNodeUrl}
+                            className="text-xs px-2 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded-md flex items-center disabled:bg-gray-500 disabled:cursor-not-allowed"
+                        >
+                            {isScanningTransactions ? <RotateCcw size={14} className="mr-1 animate-spin"/> : <RefreshCw size={14} className="mr-1"/>}
+                            {isScanningTransactions ? "Scanning..." : "Scan"}
+                        </button>
+                    </div>
+                    <div className="max-h-60 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-900 p-1 bg-gray-900 rounded">
+                        {scannedTransactions.length === 0 && !isScanningTransactions && (
+                            <p className="text-sm text-gray-500 text-center py-4">No transactions to display.</p>
+                        )}
+                        {isScanningTransactions && scannedTransactions.length === 0 && (
+                             <p className="text-sm text-gray-500 text-center py-4">Scanning for transactions...</p>
+                        )}
+                        {scannedTransactions.map((tx) => (
+                            <div key={tx.txid} className="py-2 px-3 mb-2 bg-gray-800 rounded shadow-md">
+                                <div className="flex justify-between items-center mb-1">
+                                    <span className={`font-semibold text-sm ${
+                                        tx.type === 'in' || tx.type === 'pool' || tx.type === 'pending' && !tx.destinations // Simple heuristic for incoming-like
+                                        ? 'text-green-400' 
+                                        : 'text-red-400'
+                                    }`}>
+                                    {tx.type === 'in' ? 'Incoming' : 
+                                     tx.type === 'out' ? 'Outgoing' : 
+                                     tx.type.charAt(0).toUpperCase() + tx.type.slice(1)}
+                                    </span>
+                                    <span className={`font-mono text-sm ${
+                                        tx.type === 'in' || tx.type === 'pool' || tx.type === 'pending' && !tx.destinations
+                                        ? 'text-green-500' 
+                                        : 'text-red-500'
+                                    }`}>
+                                    {tx.type === 'out' ? '-' : '+'}
+                                    {(tx.amount / 1e12).toFixed(6)} XMR
+                                    </span>
+                                </div>
+                                <p className="text-xs text-gray-400">Date: {formatDate(new Date(tx.timestamp * 1000))}</p>
+                                <p className="text-xs text-gray-400 truncate" title={tx.txid}>TXID: {tx.txid.substring(0,20)}...{tx.txid.substring(tx.txid.length - 4)}</p>
+                                <p className="text-xs text-gray-400">
+                                    Height: {tx.height > 0 ? tx.height.toLocaleString() : (tx.type === 'pool' || tx.type === 'pending' ? tx.type.toUpperCase() : 'N/A')}
+                                    {tx.confirmations !== undefined && tx.confirmations >= 0 && ` (${tx.confirmations} confs)`}
+                                </p>
+                                {tx.fee > 0 && <p className="text-xs text-gray-500">Fee: {(tx.fee / 1e12).toFixed(8)} XMR</p>}
+                                {tx.note && <p className="text-xs text-gray-300 mt-1 italic">Note: "{tx.note}"</p>}
+                                {tx.payment_id && tx.payment_id !== "0000000000000000" && <p className="text-xs text-gray-500">Payment ID: {tx.payment_id}</p>}
+                            </div>
+                        ))}
+                    </div>
+                    {!currentSettings.moneroNodeUrl && (
+                         <p className="text-xs text-yellow-400 mt-2">Set Monero Node URL to enable transaction scanning.</p>
+                    )}
+                </div>
 
                 <div className="flex items-center justify-between">
                     <span className="text-sm font-medium text-gray-300 flex items-center"><ShieldCheck size={18} className="mr-2"/>Use Tor for Network Traffic</span>
