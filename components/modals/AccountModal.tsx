@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react'; // Added useEffect
 import { UserProfile, UserSettings, AddNotificationHandler } from '../../types';
-import { X, UserCircle, Key, Zap, ShieldCheck, Save, AlertTriangle, FileText, Lock, CheckSquare, RotateCcw, RefreshCw, Wallet, Server, Network, Activity } from 'lucide-react'; // Added RotateCcw, RefreshCw, Wallet, Server, Network, Activity
+import { X, UserCircle, Key, Zap, ShieldCheck, Save, AlertTriangle, FileText, Lock, CheckSquare, RotateCcw, RefreshCw, Wallet, Server, Network, Activity, Unlock } from 'lucide-react'; // Added RotateCcw, RefreshCw, Wallet, Server, Network, Activity, Unlock
+import { encryptMnemonic, decryptMnemonic } from '../../utils/helpers';
+import { useLocalStorage } from '../../hooks/useLocalStorage'; // Assuming this path
 
 interface AccountModalProps {
   isOpen: boolean;
@@ -37,6 +39,11 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose, use
   // Mnemonic restoration state
   const [restoreMnemonicInput, setRestoreMnemonicInput] = useState('');
 
+  // Local storage for encrypted mnemonic
+  const [encryptedMnemonicLS, setEncryptedMnemonicLS, removeEncryptedMnemonicLS] = useLocalStorage<string | null>('encryptedMoneroMnemonic', null);
+  const [isDecryptingUI, setIsDecryptingUI] = useState(false); // To show password field for decryption UI state
+  const [isProcessingCrypto, setIsProcessingCrypto] = useState(false); // For loading state on buttons
+
   // Mock Node Status State
   const [nodeStatus, setNodeStatus] = useState<string>("N/A");
   const [blockchainHeight, setBlockchainHeight] = useState<string>("N/A");
@@ -45,7 +52,15 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose, use
   // Mock Wallet Balance State
   const [walletBalance, setWalletBalance] = useState<string>("N/A");
 
-
+  useEffect(() => {
+    if (encryptedMnemonicLS && !mockMnemonic && !userProfile.moneroPrivateKey) { // Only prompt for decryption if no mnemonic is active AND no keys are loaded (implying wallet is locked)
+      setIsDecryptingUI(true);
+      addNotification("Encrypted wallet found. Enter password to unlock.", "info");
+    } else {
+      setIsDecryptingUI(false);
+    }
+  }, [encryptedMnemonicLS, mockMnemonic, userProfile.moneroPrivateKey]); // Adjust dependencies
+  
   const handleSettingChange = <K extends keyof UserSettings,>(key: K, value: UserSettings[K]) => {
     setCurrentSettings(prev => ({ ...prev, [key]: value }));
   };
@@ -82,12 +97,80 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose, use
         addNotification("Please set a conceptual wallet encryption password.", "warning");
         return;
     }
-    addNotification("Conceptual wallet setup complete! (Demo keys were updated when mnemonic was generated)", "success");
-    setMockMnemonic(null); 
-    setBackupConfirmed1(false);
-    setBackupConfirmed2(false);
-    setWalletPassword('');
+
+    if (mockMnemonic && walletPassword) {
+      setIsProcessingCrypto(true);
+      encryptMnemonic(mockMnemonic, walletPassword)
+        .then(encrypted => {
+          try {
+            setEncryptedMnemonicLS(encrypted); // This could also fail if localStorage is full
+            addNotification("Mnemonic encrypted and stored securely!", "success");
+            setMockMnemonic(null);
+            setBackupConfirmed1(false);
+            setBackupConfirmed2(false);
+            setWalletPassword('');
+            setShowKeys(false);
+            setIsDecryptingUI(false); // Ensure decrypt UI is hidden
+          } catch (storageError) {
+            console.error("Local storage error:", storageError);
+            addNotification("Failed to save encrypted mnemonic to local storage. Storage might be full or unavailable.", "error");
+          }
+        })
+        .catch(err => {
+          console.error("Encryption error:", err);
+          let message = "Failed to encrypt mnemonic. Please try again.";
+          if (err instanceof DOMException && err.name === 'NotSupportedError') {
+            message = "Web Crypto API not supported on this browser. Please use a modern browser.";
+          }
+          addNotification(message, "error");
+        })
+        .finally(() => {
+          setIsProcessingCrypto(false);
+        });
+    } else {
+      addNotification("Mnemonic or password missing for setup.", "error"); // Should be caught by button disabled state mostly
+    }
   }
+
+  const handleLoadAndDecryptMnemonic = async () => {
+    if (!walletPassword) {
+      addNotification("Please enter your wallet password.", "warning");
+      return;
+    }
+    if (!encryptedMnemonicLS) {
+      addNotification("No encrypted wallet found to unlock.", "error"); // Changed message
+      return;
+    }
+
+    setIsProcessingCrypto(true);
+    try {
+      const decrypted = await decryptMnemonic(encryptedMnemonicLS, walletPassword);
+      setMockMnemonic(decrypted); 
+      const newKeys = generateNewMockKeys("DECRYPTED");
+      setUserProfile(prev => ({
+          ...prev,
+          moneroPrivateKey: newKeys.privateKey,
+          moneroPublicKey: newKeys.publicKey,
+      }));
+      setShowKeys(true);
+      addNotification("Wallet unlocked successfully and demo keys updated!", "success"); // Changed message
+      setIsDecryptingUI(false); 
+      setWalletPassword(''); 
+    } catch (error) {
+      console.error("Decryption error:", error);
+      let message = "Decryption failed. Incorrect password or corrupted data. Please try again.";
+      if (error instanceof DOMException && error.name === 'NotSupportedError') {
+        message = "Web Crypto API not supported on this browser. Please use a modern browser.";
+      } else if (error instanceof Error && error.message.toLowerCase().includes('decryption failed')) {
+         // Specific error from our decryptMnemonic function
+        message = "Decryption failed. Incorrect password or corrupted data.";
+      }
+      addNotification(message, "error");
+      // setWalletPassword(''); // Optionally clear password on failure
+    } finally {
+      setIsProcessingCrypto(false);
+    }
+  };
 
   const handleRestoreMnemonic = () => {
     if (!restoreMnemonicInput.trim()) {
@@ -151,16 +234,57 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose, use
           {/* Conceptual Wallet Setup Section */}
           <div className="border-t border-gray-700 pt-4">
             <h3 className="text-lg font-semibold text-gray-200 mb-2 flex items-center"><FileText size={20} className="mr-2 text-teal-400" />Conceptual Wallet Management</h3>
-            <p className="text-xs text-gray-400 mb-3">This section simulates generating, backing up, and restoring a Monero wallet. New demo keys are assigned on generation/restoration.</p>
+            <p className="text-xs text-gray-400 mb-3">This section simulates generating, encrypting, backing up, and restoring a Monero wallet. New demo keys are assigned on generation/restoration/decryption.</p>
             
-            {!mockMnemonic ? (
+            {isDecryptingUI && !mockMnemonic && (
+              <div className="bg-gray-700 p-4 rounded-md space-y-3 mb-4 border border-teal-500">
+                <p className="text-md font-semibold text-teal-300">Unlock Your Wallet</p>
+                <p className="text-xs text-gray-400">An encrypted wallet was found. Enter your password to unlock and load it.</p>
+                <div>
+                  <label htmlFor="walletPasswordDecrypt" className="block text-sm font-medium text-gray-300 mb-1">Wallet Password</label>
+                  <input
+                      type="password"
+                      id="walletPasswordDecrypt" // Unique ID
+                      value={walletPassword}
+                      onChange={(e) => setWalletPassword(e.target.value)}
+                      className="w-full bg-gray-600 text-white border border-gray-500 rounded-md p-2 focus:ring-teal-500 focus:border-teal-500"
+                      placeholder="Enter password to unlock"
+                  />
+                </div>
+                <button
+                  onClick={handleLoadAndDecryptMnemonic}
+                  disabled={isProcessingCrypto || !walletPassword}
+                  className="w-full px-4 py-2 bg-teal-500 hover:bg-teal-400 text-white rounded-md transition-colors flex items-center justify-center disabled:bg-gray-500 disabled:cursor-not-allowed"
+                >
+                  {isProcessingCrypto ? <RotateCcw size={18} className="mr-2 animate-spin" /> : <Unlock size={18} className="mr-2" />}
+                  {isProcessingCrypto ? "Unlocking..." : "Unlock Wallet"}
+                </button>
+                 <button
+                  onClick={() => {
+                    if (isProcessingCrypto) return;
+                    removeEncryptedMnemonicLS();
+                    setIsDecryptingUI(false);
+                    setWalletPassword('');
+                    addNotification("Encrypted wallet removed. You can now generate a new one or restore.", "info");
+                  }}
+                  disabled={isProcessingCrypto}
+                  className="w-full mt-2 px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-md transition-colors flex items-center justify-center disabled:bg-gray-500 disabled:cursor-not-allowed"
+                >
+                  <AlertTriangle size={18} className="mr-2" /> Discard & Start New
+                </button>
+              </div>
+            )}
+
+            {!mockMnemonic && !isDecryptingUI && (
               <button
                 onClick={handleGenerateMnemonic}
                 className="w-full px-4 py-2 bg-orange-500 hover:bg-orange-400 text-white rounded-md transition-colors flex items-center justify-center mb-2"
               >
                 <Zap size={18} className="mr-2" /> Generate New Mnemonic & Demo Keys
               </button>
-            ) : (
+            )}
+
+            {mockMnemonic && ( // This block shows when a mnemonic is generated OR successfully decrypted
               <div className="bg-gray-700 p-4 rounded-md space-y-3">
                 <p className="text-sm text-yellow-300 font-semibold">Your Mock Mnemonic Phrase:</p>
                 <div className="bg-gray-900 p-3 rounded font-mono text-center text-orange-300 text-sm break-words">
@@ -178,36 +302,45 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose, use
                 </label>
 
                 <div>
-                  <label htmlFor="walletPassword" className="block text-sm font-medium text-gray-300 mb-1">Set Wallet Encryption Password (Conceptual)</label>
+                  <label htmlFor="walletPasswordSetup" className="block text-sm font-medium text-gray-300 mb-1">Set Wallet Encryption Password (Conceptual)</label>
                   <input
                       type="password"
-                      id="walletPassword"
+                      id="walletPasswordSetup" // Unique ID
                       value={walletPassword}
                       onChange={(e) => setWalletPassword(e.target.value)}
                       className="w-full bg-gray-600 text-white border border-gray-500 rounded-md p-2 focus:ring-teal-500 focus:border-teal-500"
                       placeholder="Enter a strong password"
                   />
-                   <p className="text-xs text-gray-500 mt-1">This would encrypt your local wallet file.</p>
+                   <p className="text-xs text-gray-500 mt-1">This will encrypt your mnemonic for local storage.</p>
                 </div>
 
                 <button
                   onClick={handleConfirmWalletSetup}
-                  disabled={!backupConfirmed1 || !backupConfirmed2 || !walletPassword}
+                  disabled={!backupConfirmed1 || !backupConfirmed2 || !walletPassword || isProcessingCrypto}
                   className="w-full px-4 py-2 bg-teal-500 hover:bg-teal-400 text-white rounded-md transition-colors flex items-center justify-center disabled:bg-gray-500 disabled:cursor-not-allowed"
                 >
-                  <CheckSquare size={18} className="mr-2" /> Confirm Wallet Setup
+                  {isProcessingCrypto ? <RotateCcw size={18} className="mr-2 animate-spin" /> : <ShieldCheck size={18} className="mr-2" />}
+                  {isProcessingCrypto ? "Encrypting..." : "Encrypt & Save Mnemonic"}
                 </button>
                  <button
-                  onClick={() => { setMockMnemonic(null); setBackupConfirmed1(false); setBackupConfirmed2(false); setWalletPassword('');}}
-                  className="w-full mt-2 px-4 py-2 bg-gray-600 hover:bg-gray-500 text-gray-300 rounded-md transition-colors flex items-center justify-center"
+                  onClick={() => {
+                    if (isProcessingCrypto) return; 
+                    setMockMnemonic(null); 
+                    setBackupConfirmed1(false); 
+                    setBackupConfirmed2(false); 
+                    setWalletPassword('');
+                    if (encryptedMnemonicLS && !userProfile.moneroPrivateKey) setIsDecryptingUI(true); // Revert to unlock prompt if applicable
+                  }}
+                  disabled={isProcessingCrypto}
+                  className="w-full mt-2 px-4 py-2 bg-gray-600 hover:bg-gray-500 text-gray-300 rounded-md transition-colors flex items-center justify-center disabled:bg-gray-500 disabled:cursor-not-allowed"
                 >
-                   Cancel Mnemonic Generation
+                   Cancel Mnemonic Process
                 </button>
               </div>
             )}
 
             {/* Restore Mnemonic Section */}
-             {!mockMnemonic && (
+             {!mockMnemonic && !isDecryptingUI && (
                 <div className="mt-4 pt-4 border-t border-gray-700">
                     <h4 className="text-md font-semibold text-gray-300 mb-2">Restore Wallet from Mnemonic (Mock)</h4>
                     <textarea
