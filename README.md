@@ -77,7 +77,6 @@ The current MVP provides an excellent visual and interactive concept. The next p
 2.  `[ ]` **Formal Verification (If Applicable):**
 3.  `[ ]` **Penetration Testing:**
 4.  `[ ]` **Comprehensive Testnet Trials:**
-5.  `[ ]` **Legal & Regulatory Review:**
 
 ## Ongoing Tasks
 
