@@ -12,9 +12,10 @@ interface LayoutProps {
   notifications: AppNotification[];
   removeNotification: (id: string) => void;
   addNotification: AddNotificationHandler; // For AccountModal within Navbar
+  transactionsHandled: number;
 }
 
-export const Layout: React.FC<LayoutProps> = ({ children, userProfile, setUserProfile, notifications, removeNotification, addNotification }) => {
+export const Layout: React.FC<LayoutProps> = ({ children, userProfile, setUserProfile, notifications, removeNotification, addNotification, transactionsHandled }) => {
   return (
     <div className="flex flex-col min-h-screen bg-gray-900 text-gray-100">
       <Navbar userProfile={userProfile} setUserProfile={setUserProfile} addNotification={addNotification} />
@@ -22,7 +23,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, userProfile, setUserPr
         {children}
       </main>
       <NotificationArea notifications={notifications} removeNotification={removeNotification} />
-      <Footer />
+      <Footer transactionsHandled={transactionsHandled} />
     </div>
   );
 };

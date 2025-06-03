@@ -1,11 +1,11 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { Layout } from './components/Layout';
+import { Layout } from './components/Layout-1'; // Points to the -1 version
 import { DashboardPage } from './pages/DashboardPage';
 import { EscrowDetailPage } from './pages/EscrowDetailPage';
 import { AccountPage } from './pages/AccountPage';
-import { ArbiterDashboardPage } from './pages/ArbiterDashboardPage'; // Added import
+import { ArbiterDashboardPage } from './pages/ArbiterDashboardPage'; // Import ArbiterDashboardPage
 import { Escrow, UserProfile, EscrowStatus, DefaultOutcome, AddEscrowInput, AppNotification, NotificationType } from './types';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { generateId } from './utils/helpers';
@@ -20,18 +20,18 @@ const initialUserProfile: UserProfile = {
   settings: {
     useTor: false,
     moneroNodeUrl: 'http://localhost:18081',
-    totpEnabled: false,
-    totpSecretMock: undefined,
+    totpEnabled: false, // Added
+    totpSecretMock: undefined, // Added
   }
 };
 
 const App: React.FC = () => {
-  const [escrows, setEscrows] = useLocalStorage<Escrow[]>('aegisEscrows', []);
-  const [userProfile, setUserProfile] = useLocalStorage<UserProfile>('aegisUserProfile', initialUserProfile);
+  const [escrows, setEscrows] = useLocalStorage<Escrow[]>('aegisEscrows_v1', []); // Use different key for -1 version if needed
+  const [userProfile, setUserProfile] = useLocalStorage<UserProfile>('aegisUserProfile_v1', initialUserProfile);
   const [isLoading, setIsLoading] = useState(true);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [transactionsHandled, setTransactionsHandled] = useLocalStorage<number>(
-    'aegisTransactionsHandled',
+    'aegisTransactionsHandled_v1',
     Math.floor(Math.random() * 4000) + 1000 // Initial random value
   );
 
@@ -101,7 +101,7 @@ const App: React.FC = () => {
     };
     setEscrows(prev => [escrowToAdd, ...prev]);
     addNotification(`Escrow "${escrowToAdd.title}" created successfully!`, 'success');
-    incrementTransactionsHandled(5); // Increment significantly for escrow creation
+    incrementTransactionsHandled(5);
   }, [setEscrows, addNotification, incrementTransactionsHandled]);
 
   const updateEscrow = useCallback((updatedEscrow: Escrow, notificationMessage?: string) => {
@@ -139,8 +139,8 @@ const App: React.FC = () => {
         setUserProfile={setUserProfile}
         notifications={notifications}
         removeNotification={removeNotification}
-        addNotification={addNotification} // Pass addNotification for components like AccountModal inside Layout
-        transactionsHandled={transactionsHandled}
+        addNotification={addNotification} // Pass addNotification
+        transactionsHandled={transactionsHandled} // Pass transactionsHandled
     >
       <Routes>
         <Route path="/" element={<Navigate to="/dashboard" />} />

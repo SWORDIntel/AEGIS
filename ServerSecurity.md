@@ -62,4 +62,6 @@ Protecting the arbiter server and the arbiter's role is paramount. Here are key 
 *   **Security Awareness Training:** Educating arbiters about phishing, social engineering, and other attack vectors.
 *   **Incident Response Plan:** A clear plan for what to do if a compromise is suspected or occurs.
 
-In summary, while a compromised arbiter server poses a significant risk, combining strong key management (HSMs, offline signing), robust server security, sound system design (like the 2-of-3 multi-sig), and vigilant operational practices can drastically reduce the likelihood and impact of such a compromise leading to theft. The goal is to make it so that even if the server is compromised, the arbiter's private key remains safe and/or unauthorized actions cannot be performed.
+### 5. Advanced Defense / Deception Strategies
+*   **Honeypot/Relay Server Network:** Consider a relay server architecture that acts as a buffer. This relay could also host or point to numerous "fake" arbiter instances (honeypots) with no real power or connection to actual funds. An attacker attempting to map or compromise the arbiter network would waste resources on these decoys, potentially revealing their methods and intentions. This adds a layer of obscurity and can help in early detection of malicious reconnaissance.
+

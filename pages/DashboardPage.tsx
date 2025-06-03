@@ -1,10 +1,10 @@
 
 import React, { useState, useMemo } from 'react';
-import { Escrow, UserProfile, AddEscrowHandler, AddNotificationHandler } from '../types';
+import { Escrow, UserProfile, AddEscrowHandler, AddNotificationHandler, EscrowStatus } from '../types'; // Added EscrowStatus
 import { EscrowCard } from '../components/EscrowCard';
 import { CreateEscrowModal } from '../components/modals/CreateEscrowModal';
 import { ConfirmActionModal } from '../components/modals/ConfirmActionModal';
-import { PlusCircle, Search, Filter, ArrowDownUp } from 'lucide-react';
+import { PlusCircle, Search, Filter, ArrowDownUp, Inbox } from 'lucide-react'; // Added Inbox
 
 interface DashboardPageProps {
   escrows: Escrow[];
@@ -58,7 +58,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ escrows, addEscrow
       setSortOrder(prevOrder => prevOrder === 'asc' ? 'desc' : 'asc');
     } else {
       setSortKey(key);
-      setSortOrder('asc');
+      setSortOrder('asc'); // Default to ascending when changing sort key
     }
   };
   
@@ -73,7 +73,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ escrows, addEscrow
     }
   };
 
-  const uniqueStatuses = useMemo(() => ['all', ...new Set(escrows.map(e => e.status))], [escrows]);
+  const uniqueStatuses = useMemo(() => ['all', ...Object.values(EscrowStatus)], []);
+
 
   return (
     <div className="space-y-6">
@@ -96,6 +97,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ escrows, addEscrow
             className="w-full bg-gray-700 text-white border border-gray-600 rounded-md p-2 pl-10 focus:ring-teal-500 focus:border-teal-500"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            aria-label="Search escrows"
           />
           <Search size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
         </div>
@@ -105,6 +107,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ escrows, addEscrow
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
             className="bg-gray-700 text-white border border-gray-600 rounded-md p-2 focus:ring-teal-500 focus:border-teal-500"
+            aria-label="Filter by status"
           >
             {uniqueStatuses.map(status => (
               <option key={status} value={status}>{status === 'all' ? 'All Statuses' : status}</option>
@@ -117,12 +120,18 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ escrows, addEscrow
              value={sortKey}
              onChange={(e) => handleSort(e.target.value as SortKey)}
             className="bg-gray-700 text-white border border-gray-600 rounded-md p-2 focus:ring-teal-500 focus:border-teal-500"
+            aria-label="Sort by"
           >
             <option value="creationDate">Sort by Date</option>
             <option value="amountXMR">Sort by Amount</option>
             <option value="status">Sort by Status</option>
           </select>
-           <button onClick={() => handleSort(sortKey)} className="p-2 bg-gray-700 rounded-md hover:bg-gray-600">
+           <button 
+            onClick={() => handleSort(sortKey)} 
+            className="p-2 bg-gray-700 rounded-md hover:bg-gray-600 text-white"
+            aria-label={`Current sort order: ${sortOrder === 'asc' ? 'Ascending' : 'Descending'}. Toggle order.`}
+            title={`Current order: ${sortOrder === 'asc' ? 'Ascending' : 'Descending'}. Click to switch to ${sortOrder === 'asc' ? 'Descending' : 'Ascending'}.`}
+           >
              {sortOrder === 'asc' ? 'Asc' : 'Desc'}
            </button>
         </div>
@@ -135,9 +144,20 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ escrows, addEscrow
           ))}
         </div>
       ) : (
-        <div className="text-center py-10">
-          <p className="text-xl text-gray-500">No escrows found.</p>
-          {escrows.length > 0 && <p className="text-gray-400 mt-2">Try adjusting your search or filter criteria.</p>}
+        <div className="text-center py-16 bg-gray-800 rounded-lg shadow">
+          <Inbox size={64} className="mx-auto text-teal-500 mb-6" />
+          <h2 className="text-2xl font-semibold text-gray-300 mb-2">No Escrows Found</h2>
+          {escrows.length === 0 ? (
+            <p className="text-gray-400">It looks like you haven't created or joined any escrows yet. <br />Get started by creating a new one!</p>
+          ) : (
+            <p className="text-gray-400">Try adjusting your search or filter criteria, or create a new escrow.</p>
+          )}
+           <button
+            onClick={() => setIsCreateModalOpen(true)}
+            className="mt-6 bg-teal-500 hover:bg-teal-400 text-white font-semibold py-2.5 px-6 rounded-lg shadow-md flex items-center transition-colors duration-150 ease-in-out mx-auto"
+          >
+            <PlusCircle size={20} className="mr-2" /> Create New Escrow
+          </button>
         </div>
       )}
 
@@ -146,6 +166,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ escrows, addEscrow
         onClose={() => setIsCreateModalOpen(false)}
         addEscrow={addEscrow}
         currentUser={currentUser}
+        addNotification={addNotification} 
       />
        <ConfirmActionModal
         isOpen={!!escrowToDelete}

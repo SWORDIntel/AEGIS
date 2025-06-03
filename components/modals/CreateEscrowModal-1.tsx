@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { DefaultOutcome, UserProfile, AddEscrowHandler, AddNotificationHandler } from '../../types'; // Added AddNotificationHandler
-import { X, PlusCircle, Info } from 'lucide-react';
+import { X, PlusCircle, Info } from 'lucide-react'; // Added Info
 
 interface CreateEscrowModalProps {
   isOpen: boolean;
@@ -45,7 +45,7 @@ export const CreateEscrowModal: React.FC<CreateEscrowModalProps> = ({ isOpen, on
       defaultOutcome,
       timerDurationHours: numericTimer,
     };
-    addEscrow(newEscrowFields);
+    addEscrow(newEscrowFields); // Notification for success is handled in App.tsx's addEscrow
     onClose();
     // Reset form
     setTitle('');

@@ -22,8 +22,7 @@ export const AccountPage: React.FC<AccountPageProps> = ({ userProfile, setUserPr
     <div className="p-6 bg-gray-800 shadow-xl rounded-lg">
       <h1 className="text-3xl font-bold text-teal-400 mb-4">Account Settings</h1>
       <p className="text-gray-300 mb-6">
-        Manage your profile, security settings, and application preferences. 
-        Currently, these are conceptual and for demonstration.
+        Manage your profile, security settings, and application preferences.
       </p>
       
       <div className="bg-gray-700 p-4 rounded-md">

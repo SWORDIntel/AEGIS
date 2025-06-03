@@ -1,10 +1,11 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Escrow, ChatMessage, EscrowStatus, UserProfile, ArbiterRuling, DefaultOutcome, EscrowParticipant, AddNotificationHandler } from '../types';
 import { formatDate, generateId, getParticipant, getOtherParticipantUsername } from '../utils/helpers';
-import { ChevronLeft, Send, Paperclip, ShieldAlert, CheckCircle, XCircle, MessageSquare, DollarSign, Info, Clock, Users, AlertTriangle, Award, DivideSquare, TimerOff, ShieldCheck, ShieldX, HelpCircle } from 'lucide-react';
+import { ChevronLeft, Send, Paperclip, ShieldAlert, CheckCircle, XCircle, MessageSquare, DollarSign, Info, Clock, Users, AlertTriangle, Award, DivideSquare, TimerOff, ShieldCheck, ShieldX, HelpCircle, FileText, Filter as FilterIcon } from 'lucide-react';
 import { ConfirmActionModal } from '../components/modals/ConfirmActionModal';
+import { EscrowTimer } from '../components/EscrowTimer'; // Added import
 
 interface EscrowDetailPageProps {
   escrows: Escrow[];
@@ -13,8 +14,27 @@ interface EscrowDetailPageProps {
   addNotification: AddNotificationHandler;
 }
 
-// Mock for getOtherParticipantUsername if needed, assuming no global user list for now
-const mockAllUsers: UserProfile[] = [];
+const mockAllUsers: UserProfile[] = []; // Assuming no global user list for now
+
+interface TabButtonProps {
+  label: string;
+  isActive: boolean;
+  onClick: () => void;
+  icon?: React.ReactNode;
+}
+
+const TabButton: React.FC<TabButtonProps> = ({ label, isActive, onClick, icon }) => (
+  <button
+    onClick={onClick}
+    className={`flex items-center justify-center px-4 py-2 font-medium text-sm rounded-t-lg transition-colors
+                ${isActive 
+                  ? 'bg-gray-700 text-teal-400 border-b-2 border-teal-400' 
+                  : 'text-gray-400 hover:text-gray-200 hover:bg-gray-750'}`}
+  >
+    {icon && <span className="mr-2">{icon}</span>}
+    {label}
+  </button>
+);
 
 
 const ChatWindow: React.FC<{ 
@@ -54,7 +74,7 @@ const ChatWindow: React.FC<{
   };
 
   return (
-    <div className="bg-gray-700 rounded-lg p-4 mt-6">
+    <div className="bg-gray-750 rounded-b-lg p-4"> {/* Matched bg with tab content areas */}
       <h3 className="text-lg font-semibold text-gray-200 mb-3 flex items-center"><MessageSquare size={20} className="mr-2 text-teal-400" />Secure Communication Log</h3>
       <div className="h-64 overflow-y-auto mb-3 p-2 bg-gray-800 rounded scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
         {escrow.chatLog.length === 0 && <p className="text-gray-500 text-sm text-center py-4">No messages yet.</p>}
@@ -80,14 +100,14 @@ const ChatWindow: React.FC<{
           <button onClick={handleSend} className="p-2 bg-teal-500 hover:bg-teal-400 text-white rounded-md transition-colors" title="Send Message" disabled={isChatDisabled}>
             <Send size={20} />
           </button>
-           {canSubmitEvidence && !isChatDisabled ? ( // Ensure chat isn't disabled for evidence submission either
+           {canSubmitEvidence && !isChatDisabled ? ( 
             <button onClick={handleSendAsEvidence} className="p-2 bg-orange-500 hover:bg-orange-400 text-white rounded-md transition-colors" title="Send as Evidence" disabled={isChatDisabled}>
               <Paperclip size={20} />
             </button>
           ) : null}
         </div>
       )}
-       <p className="text-xs text-gray-500 mt-2">Chat logs can be submitted as Merkle-proofed evidence in a real system. Chat disabled for completed/cancelled escrows.</p>
+       <p className="text-xs text-gray-500 mt-2">Chat logs can be submitted as evidence. Chat is disabled for completed or cancelled escrows.</p>
     </div>
   );
 };
@@ -113,12 +133,15 @@ const ParticipantInfo: React.FC<{label: string, id: string, hasFunded?: boolean,
   )
 }
 
+type ActiveTab = 'details' | 'chat' | 'evidence';
 
 export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, updateEscrow, currentUser, addNotification }) => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [escrow, setEscrow] = useState<Escrow | null>(null);
   const [actionToConfirm, setActionToConfirm] = useState<{ type: string; title: string; message: string | React.ReactNode; data?: any; confirmButtonClass?: string, confirmButtonText?: string } | null>(null);
+  const [activeTab, setActiveTab] = useState<ActiveTab>('details');
+  const [evidenceFilter, setEvidenceFilter] = useState<'all' | 'buyer' | 'seller'>('all');
 
   useEffect(() => {
     const foundEscrow = escrows.find(e => e.id === id);
@@ -142,7 +165,7 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
       isEvidence: false,
     };
     const updatedEscrow = { ...escrow, chatLog: [...escrow.chatLog, newMessage] };
-    setEscrow(updatedEscrow); // Optimistic update
+    setEscrow(updatedEscrow); 
     updateEscrow(updatedEscrow, `Message sent in "${escrow.title}"`);
   }, [escrow, currentUser, updateEscrow]);
 
@@ -158,9 +181,9 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
       isEvidence: true,
     };
     const updatedEscrow = { ...escrow, chatLog: [...escrow.chatLog, newMessage] };
-    setEscrow(updatedEscrow); // Optimistic update
+    setEscrow(updatedEscrow); 
     updateEscrow(updatedEscrow, `Evidence submitted in "${escrow.title}"`);
-    addNotification('Evidence submitted (conceptually marked in chat).', 'info');
+    addNotification('Evidence submitted (marked in chat).', 'info');
   }, [escrow, currentUser, updateEscrow, addNotification]);
 
   const handleAction = (actionType: string, data?: any) => {
@@ -177,13 +200,12 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
         break;
       case 'fund_seller':
         updatedEscrow.seller.hasFunded = true;
-        // For MVP simplicity, seller funding also implies they confirmed their part (e.g. item ready)
         updatedEscrow.seller.hasConfirmed = true; 
         notificationMessage = `Seller funded & confirmed item for escrow: "${escrow.title}"`;
         if (updatedEscrow.buyer.hasFunded) updatedEscrow.status = EscrowStatus.ACTIVE;
         else updatedEscrow.status = EscrowStatus.SELLER_CONFIRMED_ITEM;
         break;
-      case 'confirm_buyer': // Buyer confirms satisfaction
+      case 'confirm_buyer': 
         updatedEscrow.buyer.hasConfirmed = true;
         notificationMessage = `Buyer confirmed satisfaction for: "${escrow.title}"`;
         if (updatedEscrow.seller.hasConfirmed) {
@@ -193,7 +215,7 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
             updatedEscrow.status = EscrowStatus.AWAITING_PARTICIPANT_ACTION;
         }
         break;
-      case 'confirm_seller': // Seller confirms shipment/service
+      case 'confirm_seller': 
         updatedEscrow.seller.hasConfirmed = true;
         notificationMessage = `Seller confirmed shipment/service for: "${escrow.title}"`;
         if (updatedEscrow.buyer.hasConfirmed) {
@@ -229,16 +251,15 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
         break;
       case 'timelock_expiry':
         if (escrow.defaultOutcome === DefaultOutcome.BUYER_REFUND) {
-            updatedEscrow.status = EscrowStatus.COMPLETED_REFUNDED;
             updatedEscrow.resolutionDetails = "Timelock expired: Default outcome - Full refund to Buyer.";
+            updatedEscrow.status = EscrowStatus.COMPLETED_REFUNDED; 
         } else if (escrow.defaultOutcome === DefaultOutcome.SPLIT_50_50) {
-            updatedEscrow.status = EscrowStatus.COMPLETED_SPLIT;
             updatedEscrow.resolutionDetails = "Timelock expired: Default outcome - 50/50 Split.";
-        } else { // DefaultOutcome.SELLER_FAVOR
-            updatedEscrow.status = EscrowStatus.COMPLETED_RELEASED;
+            updatedEscrow.status = EscrowStatus.COMPLETED_SPLIT; 
+        } else { 
             updatedEscrow.resolutionDetails = "Timelock expired: Default outcome - Full release to Seller.";
+            updatedEscrow.status = EscrowStatus.COMPLETED_RELEASED; 
         }
-        updatedEscrow.status = EscrowStatus.TIMELOCK_DEFAULT_TRIGGERED; // More specific status
         notificationMessage = `Timelock expired, default outcome applied for: "${escrow.title}"`;
         break;
       default:
@@ -246,14 +267,26 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
         return;
     }
     
-    setEscrow(updatedEscrow); // Optimistic update
+    setEscrow(updatedEscrow); 
     updateEscrow(updatedEscrow, notificationMessage);
-    setActionToConfirm(null); // Close confirmation modal
+    setActionToConfirm(null); 
   };
 
   const requestActionConfirmation = (type: string, title: string, message: string | React.ReactNode, data?:any, confirmButtonClass?: string, confirmButtonText?: string) => {
     setActionToConfirm({ type, title, message, data, confirmButtonClass, confirmButtonText });
   };
+
+  const filteredEvidence = useMemo(() => {
+    if (!escrow) return [];
+    return escrow.chatLog.filter(msg => {
+      if (!msg.isEvidence) return false;
+      if (evidenceFilter === 'all') return true;
+      if (evidenceFilter === 'buyer' && msg.senderId === escrow.buyer.id) return true;
+      if (evidenceFilter === 'seller' && msg.senderId === escrow.seller.id) return true;
+      return false;
+    });
+  }, [escrow, evidenceFilter]);
+
 
   if (!escrow) {
     return (
@@ -268,7 +301,6 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
   }
 
   const userRole = getParticipant(escrow, currentUser.id);
-  const otherPartyUsername = getOtherParticipantUsername(escrow, currentUser, mockAllUsers);
 
   const canFund = (role: 'buyer' | 'seller') => {
     if (role === 'buyer') return !escrow.buyer.hasFunded && (escrow.status === EscrowStatus.PENDING_FUNDING || escrow.status === EscrowStatus.SELLER_CONFIRMED_ITEM);
@@ -284,11 +316,12 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
   }
 
   const canInitiateDispute = userRole !== 'observer' && 
-    (escrow.status === EscrowStatus.ACTIVE || 
-     escrow.status === EscrowStatus.AWAITING_PARTICIPANT_ACTION ||
-     escrow.status === EscrowStatus.BUYER_FUNDED ||
-     escrow.status === EscrowStatus.SELLER_CONFIRMED_ITEM
-    ) && !escrow.arbiterInvolved;
+    [
+        EscrowStatus.ACTIVE, 
+        EscrowStatus.AWAITING_PARTICIPANT_ACTION,
+        EscrowStatus.BUYER_FUNDED,
+        EscrowStatus.SELLER_CONFIRMED_ITEM
+    ].includes(escrow.status) && !escrow.arbiterInvolved;
 
   const isTerminalState = [
     EscrowStatus.COMPLETED_RELEASED, 
@@ -317,102 +350,155 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
 
   return (
     <div className="max-w-4xl mx-auto">
-      <button onClick={() => navigate('/dashboard')} className="flex items-center text-teal-400 hover:text-teal-300 mb-6 transition-colors">
-        <ChevronLeft size={20} className="mr-1" /> Back to Dashboard
+      <button onClick={() => navigate(-1)} className="flex items-center text-teal-400 hover:text-teal-300 mb-6 transition-colors">
+        <ChevronLeft size={20} className="mr-1" /> Back
       </button>
 
-      <div className="bg-gray-800 shadow-xl rounded-lg p-6 md:p-8">
-        <div className="flex flex-col md:flex-row justify-between md:items-center mb-4">
-          <h1 className="text-3xl font-bold text-teal-400 truncate" title={escrow.title}>{escrow.title}</h1>
-          <span className={`text-lg font-semibold px-3 py-1 rounded-full ${statusColorMapping[escrow.status] || 'text-gray-300'}`}>
-            {escrow.status}
-          </span>
-        </div>
-        
-        <p className="text-gray-400 mb-6 text-sm">{escrow.description}</p>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            <div className="bg-gray-700 p-4 rounded-md">
-                <p className="text-sm text-gray-400 flex items-center"><DollarSign size={16} className="mr-1 text-teal-400"/> Amount</p>
-                <p className="text-xl font-bold text-white">{escrow.amountXMR} XMR</p>
+      <div className="bg-gray-800 shadow-xl rounded-lg">
+        <div className="p-6 md:p-8 border-b border-gray-700">
+            <div className="flex flex-col md:flex-row justify-between md:items-center mb-2">
+            <h1 className="text-3xl font-bold text-teal-400 truncate" title={escrow.title}>{escrow.title}</h1>
+            <span className={`text-lg font-semibold px-3 py-1 rounded-full ${statusColorMapping[escrow.status] || 'text-gray-300'}`}>
+                {escrow.status}
+            </span>
             </div>
-            <div className="bg-gray-700 p-4 rounded-md">
-                <p className="text-sm text-gray-400 flex items-center"><Clock size={16} className="mr-1 text-teal-400"/> Timer Duration</p>
-                <p className="text-xl font-bold text-white">{escrow.timerDurationHours} Hours</p>
-            </div>
-             <div className="bg-gray-700 p-4 rounded-md">
-                <p className="text-sm text-gray-400 flex items-center"><Info size={16} className="mr-1 text-teal-400"/> Default Outcome (on Timeout)</p>
-                <p className="text-md font-semibold text-white">{escrow.defaultOutcome}</p>
-            </div>
-             <div className="bg-gray-700 p-4 rounded-md">
-                <p className="text-sm text-gray-400 flex items-center"><ShieldAlert size={16} className="mr-1 text-teal-400"/> Arbiter</p>
-                <p className="text-md font-semibold text-white truncate" title={escrow.arbiterId}>{escrow.arbiterId} {escrow.arbiterInvolved ? "(Involved)" : "(Standing By)"}</p>
-            </div>
+            <p className="text-gray-400 mb-4 text-sm">{escrow.description}</p>
+            <EscrowTimer escrow={escrow} size="normal" /> {/* Timer added here */}
         </div>
 
-        <h3 className="text-xl font-semibold text-gray-200 mb-3 flex items-center"><Users size={22} className="mr-2 text-teal-400"/>Participants</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-           <ParticipantInfo label="Buyer" id={escrow.buyer.id} hasFunded={escrow.buyer.hasFunded} hasConfirmed={escrow.buyer.hasConfirmed} isCurrentUser={currentUser.id === escrow.buyer.id} />
-           <ParticipantInfo label="Seller" id={escrow.seller.id} hasFunded={escrow.seller.hasFunded} hasConfirmed={escrow.seller.hasConfirmed} isCurrentUser={currentUser.id === escrow.seller.id} />
+        {/* Tabs */}
+        <div className="flex border-b border-gray-700 px-2 sm:px-4 md:px-6">
+          <TabButton label="Details" isActive={activeTab === 'details'} onClick={() => setActiveTab('details')} icon={<Info size={16}/>} />
+          <TabButton label="Chat Log" isActive={activeTab === 'chat'} onClick={() => setActiveTab('chat')} icon={<MessageSquare size={16}/>}/>
+          <TabButton label="Evidence" isActive={activeTab === 'evidence'} onClick={() => setActiveTab('evidence')} icon={<FileText size={16}/>}/>
         </div>
-        
-        <p className="text-xs text-gray-500 mb-1">Multi-Sig Address (Mock): <span className="font-mono text-gray-400">{escrow.multiSigAddress}</span></p>
-        <p className="text-xs text-gray-500 mb-6">Created: {formatDate(escrow.creationDate)} | Last Update: {formatDate(escrow.lastUpdateDate)}</p>
 
-        {!isTerminalState && (
-            <>
-                <h3 className="text-xl font-semibold text-gray-200 mb-3 flex items-center"><AlertTriangle size={22} className="mr-2 text-yellow-400"/>Your Actions</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mb-6">
-                    {userRole === 'buyer' && canFund('buyer') && (
-                        <button onClick={() => requestActionConfirmation('fund_buyer', 'Confirm Funding', 'Are you sure you want to mark this escrow as funded from your side?', undefined, 'bg-green-600 hover:bg-green-500', 'Confirm Buyer Funding')} className="w-full bg-green-600 hover:bg-green-500 text-white font-semibold py-2 px-4 rounded-md transition-colors">Fund Escrow (as Buyer)</button>
-                    )}
-                    {userRole === 'seller' && canFund('seller') && (
-                        <button onClick={() => requestActionConfirmation('fund_seller', 'Confirm Funding & Item', 'Are you sure you want to mark this escrow as funded and item confirmed from your side?', undefined, 'bg-green-600 hover:bg-green-500', 'Confirm Seller Funding')} className="w-full bg-green-600 hover:bg-green-500 text-white font-semibold py-2 px-4 rounded-md transition-colors">Fund Escrow (as Seller)</button>
-                    )}
-                    {userRole === 'buyer' && canConfirm('buyer') && (
-                         <button onClick={() => requestActionConfirmation('confirm_buyer', 'Confirm Satisfaction', 'Are you sure you are satisfied with the item/service and want to release funds to the seller?', undefined, 'bg-sky-500 hover:bg-sky-400', 'Confirm & Release')} className="w-full bg-sky-500 hover:bg-sky-400 text-white font-semibold py-2 px-4 rounded-md transition-colors">Confirm Satisfaction</button>
-                    )}
-                     {userRole === 'seller' && canConfirm('seller') && (
-                        <button onClick={() => requestActionConfirmation('confirm_seller', 'Confirm Shipment/Service', 'Are you sure you have shipped the item / completed the service as agreed?', undefined, 'bg-sky-500 hover:bg-sky-400', 'Confirm Shipment/Service')} className="w-full bg-sky-500 hover:bg-sky-400 text-white font-semibold py-2 px-4 rounded-md transition-colors">Confirm Shipment/Service</button>
-                    )}
-                    {canInitiateDispute && (
-                        <button onClick={() => {
-                            const reason = prompt("Please briefly state the reason for initiating the dispute:");
-                            if (reason !== null) { // User didn't cancel prompt
-                               requestActionConfirmation('initiate_dispute', 'Initiate Dispute', `Are you sure you want to initiate a dispute? Reason: "${reason || 'No reason provided'}" This will involve the arbiter.`, { reason }, 'bg-red-600 hover:bg-red-500', 'Initiate Dispute')
-                            }
-                        }} className="w-full bg-red-600 hover:bg-red-500 text-white font-semibold py-2 px-4 rounded-md transition-colors">Initiate Dispute</button>
-                    )}
+        {/* Tab Content */}
+        {activeTab === 'details' && (
+          <div className="p-6 md:p-8 bg-gray-750 rounded-b-lg">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div className="bg-gray-700 p-4 rounded-md">
+                    <p className="text-sm text-gray-400 flex items-center"><DollarSign size={16} className="mr-1 text-teal-400"/> Amount</p>
+                    <p className="text-xl font-bold text-white">{escrow.amountXMR} XMR</p>
                 </div>
-            </>
-        )}
-
-        {escrow.arbiterInvolved && escrow.status === EscrowStatus.DISPUTE_INITIATED && !isTerminalState && (
-             <div className="mt-6 p-4 bg-gray-700 rounded-lg">
-                <h3 className="text-lg font-semibold text-yellow-300 mb-3 flex items-center"><ShieldAlert size={20} className="mr-2"/>Mock Arbiter Actions (For Demo)</h3>
-                <p className="text-xs text-gray-400 mb-3">These buttons simulate an arbiter's decision.</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-                    <button onClick={() => requestActionConfirmation('rule_for_buyer', 'Arbiter: Rule for Buyer', 'Simulate arbiter ruling in favor of the Buyer (funds refunded).', undefined, 'bg-blue-600 hover:bg-blue-500', 'Rule for Buyer')} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-2 px-3 rounded-md text-sm transition-colors flex items-center justify-center"><Award size={16} className="mr-1"/> For Buyer</button>
-                    <button onClick={() => requestActionConfirmation('rule_for_seller', 'Arbiter: Rule for Seller', 'Simulate arbiter ruling in favor of the Seller (funds released).', undefined, 'bg-purple-600 hover:bg-purple-500', 'Rule for Seller')} className="w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold py-2 px-3 rounded-md text-sm transition-colors flex items-center justify-center"><Award size={16} className="mr-1"/> For Seller</button>
-                    <button onClick={() => requestActionConfirmation('rule_for_split', 'Arbiter: Rule for 50/50 Split', 'Simulate arbiter ruling for a 50/50 split of funds.', undefined, 'bg-indigo-600 hover:bg-indigo-500', 'Rule for Split')} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2 px-3 rounded-md text-sm transition-colors flex items-center justify-center"><DivideSquare size={16} className="mr-1"/> 50/50 Split</button>
-                    <button onClick={() => requestActionConfirmation('timelock_expiry', 'Simulate Timelock Expiry', 'Simulate the escrow timer expiring during a dispute, triggering the default outcome.', undefined, 'bg-orange-600 hover:bg-orange-500', 'Simulate Timelock')} className="w-full bg-orange-600 hover:bg-orange-500 text-white font-semibold py-2 px-3 rounded-md text-sm transition-colors flex items-center justify-center"><TimerOff size={16} className="mr-1"/>Timelock</button>
+                <div className="bg-gray-700 p-4 rounded-md">
+                    <p className="text-sm text-gray-400 flex items-center"><Clock size={16} className="mr-1 text-teal-400"/> Total Timer Duration</p>
+                    <p className="text-xl font-bold text-white">{escrow.timerDurationHours} Hours</p>
+                </div>
+                <div className="bg-gray-700 p-4 rounded-md">
+                    <p className="text-sm text-gray-400 flex items-center"><Info size={16} className="mr-1 text-teal-400"/> Default Outcome (on Timeout)</p>
+                    <p className="text-md font-semibold text-white">{escrow.defaultOutcome}</p>
+                </div>
+                <div className="bg-gray-700 p-4 rounded-md">
+                    <p className="text-sm text-gray-400 flex items-center"><ShieldAlert size={16} className="mr-1 text-teal-400"/> Arbiter</p>
+                    <p className="text-md font-semibold text-white truncate" title={escrow.arbiterId}>{escrow.arbiterId} {escrow.arbiterInvolved ? "(Involved)" : "(Standing By)"}</p>
                 </div>
             </div>
+
+            <h3 className="text-xl font-semibold text-gray-200 mb-3 flex items-center"><Users size={22} className="mr-2 text-teal-400"/>Participants</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <ParticipantInfo label="Buyer" id={escrow.buyer.id} hasFunded={escrow.buyer.hasFunded} hasConfirmed={escrow.buyer.hasConfirmed} isCurrentUser={currentUser.id === escrow.buyer.id} />
+            <ParticipantInfo label="Seller" id={escrow.seller.id} hasFunded={escrow.seller.hasFunded} hasConfirmed={escrow.seller.hasConfirmed} isCurrentUser={currentUser.id === escrow.seller.id} />
+            </div>
+            
+            <p className="text-xs text-gray-500 mb-1">Multi-Sig Address: <span className="font-mono text-gray-400">{escrow.multiSigAddress}</span></p>
+            <p className="text-xs text-gray-500 mb-6">Created: {formatDate(escrow.creationDate)} | Last Update: {formatDate(escrow.lastUpdateDate)}</p>
+
+            {!isTerminalState && (
+                <>
+                    <h3 className="text-xl font-semibold text-gray-200 mb-3 flex items-center"><AlertTriangle size={22} className="mr-2 text-yellow-400"/>Your Actions</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mb-6">
+                        {userRole === 'buyer' && canFund('buyer') && (
+                            <button onClick={() => requestActionConfirmation('fund_buyer', 'Confirm Funding', 'Are you sure you want to mark this escrow as funded from your side?', undefined, 'bg-green-600 hover:bg-green-500', 'Confirm Buyer Funding')} className="w-full bg-green-600 hover:bg-green-500 text-white font-semibold py-2 px-4 rounded-md transition-colors">Fund Escrow (as Buyer)</button>
+                        )}
+                        {userRole === 'seller' && canFund('seller') && (
+                            <button onClick={() => requestActionConfirmation('fund_seller', 'Confirm Funding & Item', 'Are you sure you want to mark this escrow as funded and item confirmed from your side?', undefined, 'bg-green-600 hover:bg-green-500', 'Confirm Seller Funding')} className="w-full bg-green-600 hover:bg-green-500 text-white font-semibold py-2 px-4 rounded-md transition-colors">Fund Escrow (as Seller)</button>
+                        )}
+                        {userRole === 'buyer' && canConfirm('buyer') && (
+                            <button onClick={() => requestActionConfirmation('confirm_buyer', 'Confirm Satisfaction', 'Are you sure you are satisfied with the item/service and want to release funds to the seller?', undefined, 'bg-sky-500 hover:bg-sky-400', 'Confirm & Release')} className="w-full bg-sky-500 hover:bg-sky-400 text-white font-semibold py-2 px-4 rounded-md transition-colors">Confirm Satisfaction</button>
+                        )}
+                        {userRole === 'seller' && canConfirm('seller') && (
+                            <button onClick={() => requestActionConfirmation('confirm_seller', 'Confirm Shipment/Service', 'Are you sure you have shipped the item / completed the service as agreed?', undefined, 'bg-sky-500 hover:bg-sky-400', 'Confirm Shipment/Service')} className="w-full bg-sky-500 hover:bg-sky-400 text-white font-semibold py-2 px-4 rounded-md transition-colors">Confirm Shipment/Service</button>
+                        )}
+                        {canInitiateDispute && (
+                            <button onClick={() => {
+                                const reason = prompt("Please briefly state the reason for initiating the dispute:");
+                                if (reason !== null) { 
+                                requestActionConfirmation('initiate_dispute', 'Initiate Dispute', <>Are you sure you want to initiate a dispute? Reason: <strong className="block mt-1">"{reason || 'No reason provided'}"</strong> This will involve the arbiter.</>, { reason }, 'bg-red-600 hover:bg-red-500', 'Initiate Dispute')
+                                }
+                            }} className="w-full bg-red-600 hover:bg-red-500 text-white font-semibold py-2 px-4 rounded-md transition-colors">Initiate Dispute</button>
+                        )}
+                    </div>
+                </>
+            )}
+
+            {escrow.arbiterInvolved && 
+             (escrow.status === EscrowStatus.DISPUTE_INITIATED || escrow.status === EscrowStatus.ARBITER_REVIEW || escrow.status === EscrowStatus.EVIDENCE_SUBMISSION) && 
+             !isTerminalState && (
+                <div className="mt-6 p-4 bg-gray-700 rounded-lg">
+                    <h3 className="text-lg font-semibold text-yellow-300 mb-3 flex items-center"><ShieldAlert size={20} className="mr-2"/>Arbiter Actions</h3>
+                    <p className="text-xs text-gray-400 mb-3">These buttons simulate an arbiter's decision. Use with caution.</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                        <button onClick={() => requestActionConfirmation('rule_for_buyer', 'Arbiter: Rule for Buyer', 'Simulate arbiter ruling in favor of the Buyer (funds refunded).', undefined, 'bg-blue-600 hover:bg-blue-500', 'Rule for Buyer')} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-2 px-3 rounded-md text-sm transition-colors flex items-center justify-center"><Award size={16} className="mr-1"/> For Buyer</button>
+                        <button onClick={() => requestActionConfirmation('rule_for_seller', 'Arbiter: Rule for Seller', 'Simulate arbiter ruling in favor of the Seller (funds released).', undefined, 'bg-purple-600 hover:bg-purple-500', 'Rule for Seller')} className="w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold py-2 px-3 rounded-md text-sm transition-colors flex items-center justify-center"><Award size={16} className="mr-1"/> For Seller</button>
+                        <button onClick={() => requestActionConfirmation('rule_for_split', 'Arbiter: Rule for 50/50 Split', 'Simulate arbiter ruling for a 50/50 split of funds.', undefined, 'bg-indigo-600 hover:bg-indigo-500', 'Rule for Split')} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2 px-3 rounded-md text-sm transition-colors flex items-center justify-center"><DivideSquare size={16} className="mr-1"/> 50/50 Split</button>
+                        <button onClick={() => requestActionConfirmation('timelock_expiry', 'Simulate Timelock Expiry', 'Simulate the escrow timer expiring, triggering the default outcome.', undefined, 'bg-orange-600 hover:bg-orange-500', 'Simulate Timelock')} className="w-full bg-orange-600 hover:bg-orange-500 text-white font-semibold py-2 px-3 rounded-md text-sm transition-colors flex items-center justify-center"><TimerOff size={16} className="mr-1"/>Timelock</button>
+                    </div>
+                </div>
+            )}
+            
+            {isTerminalState && escrow.resolutionDetails && (
+                <div className="mt-6 p-4 bg-gray-700 rounded-lg">
+                    <h3 className="text-lg font-semibold text-teal-300 mb-2 flex items-center">
+                        {escrow.status === EscrowStatus.COMPLETED_RELEASED || escrow.status === EscrowStatus.COMPLETED_REFUNDED || escrow.status === EscrowStatus.COMPLETED_SPLIT ? <CheckCircle size={20} className="mr-2"/> : <XCircle size={20} className="mr-2"/>}
+                        Escrow Resolution
+                    </h3>
+                    <p className="text-gray-300">{escrow.resolutionDetails}</p>
+                    {escrow.arbiterRuling && <p className="text-sm text-gray-400 mt-1">Arbiter final ruling: <span className="font-semibold">{escrow.arbiterRuling}</span></p>}
+                </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'chat' && (
+          <ChatWindow escrow={escrow} currentUser={currentUser} onSendMessage={handleSendMessage} onUploadEvidence={handleUploadEvidence} />
         )}
         
-        {isTerminalState && escrow.resolutionDetails && (
-            <div className="mt-6 p-4 bg-gray-700 rounded-lg">
-                <h3 className="text-lg font-semibold text-teal-300 mb-2 flex items-center">
-                    {escrow.status === EscrowStatus.COMPLETED_RELEASED || escrow.status === EscrowStatus.COMPLETED_REFUNDED || escrow.status === EscrowStatus.COMPLETED_SPLIT ? <CheckCircle size={20} className="mr-2"/> : <XCircle size={20} className="mr-2"/>}
-                    Escrow Resolution
-                </h3>
-                <p className="text-gray-300">{escrow.resolutionDetails}</p>
-                {escrow.arbiterRuling && <p className="text-sm text-gray-400 mt-1">Arbiter final ruling: <span className="font-semibold">{escrow.arbiterRuling}</span></p>}
+        {activeTab === 'evidence' && (
+            <div className="p-6 md:p-8 bg-gray-750 rounded-b-lg">
+                <div className="flex flex-col sm:flex-row justify-between items-center mb-4">
+                    <h3 className="text-lg font-semibold text-gray-200 flex items-center"><FileText size={20} className="mr-2 text-teal-400" />Submitted Evidence</h3>
+                    <div className="flex items-center space-x-2 mt-3 sm:mt-0">
+                        <FilterIcon size={16} className="text-gray-400" />
+                        <span className="text-sm text-gray-400">Filter by:</span>
+                        {(['all', 'buyer', 'seller'] as const).map(filterOpt => (
+                            <button
+                                key={filterOpt}
+                                onClick={() => setEvidenceFilter(filterOpt)}
+                                className={`px-3 py-1 text-xs rounded-md transition-colors ${evidenceFilter === filterOpt ? 'bg-teal-500 text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'}`}
+                            >
+                                {filterOpt.charAt(0).toUpperCase() + filterOpt.slice(1)}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                <div className="h-96 overflow-y-auto p-2 bg-gray-800 rounded scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
+                    {filteredEvidence.length === 0 ? (
+                        <p className="text-gray-500 text-sm text-center py-10">
+                            {escrow.chatLog.some(m => m.isEvidence) ? "No evidence matching current filter." : "No evidence has been submitted yet."}
+                        </p>
+                    ) : (
+                        filteredEvidence.map(msg => (
+                            <div key={msg.id} className="mb-3 p-3 rounded-md bg-gray-700 border border-orange-500/30">
+                                <p className="text-xs font-semibold text-orange-300">Evidence from: {msg.senderUsername}</p>
+                                <p className="text-sm text-white py-2">{msg.text}</p>
+                                <p className="text-xs text-gray-400 mt-1 text-right">{formatDate(msg.timestamp)}</p>
+                            </div>
+                        ))
+                    )}
+                </div>
             </div>
         )}
-
-
-        <ChatWindow escrow={escrow} currentUser={currentUser} onSendMessage={handleSendMessage} onUploadEvidence={handleUploadEvidence} />
 
       </div>
 

@@ -1,10 +1,10 @@
 
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Shield, UserCircle, Settings, LogOut, Menu, X, Gavel, ActivitySquare } from 'lucide-react'; // Added Gavel, ActivitySquare
+import { Shield, UserCircle, LogOut, Menu, X, Gavel, ActivitySquare } from 'lucide-react'; // Added Gavel, ActivitySquare
 import { UserProfile, AddNotificationHandler } from '../types';
-import { AccountModal } from './modals/AccountModal';
-import { SystemMonitorModal } from './modals/SystemMonitorModal'; // Added
+import { AccountModal } from './modals/AccountModal-1'; // Points to -1 version
+import { SystemMonitorModal } from './modals/SystemMonitorModal'; // Assumes non -1 version is current
 
 interface NavbarProps {
   userProfile: UserProfile;
@@ -14,7 +14,7 @@ interface NavbarProps {
 
 export const Navbar: React.FC<NavbarProps> = ({ userProfile, setUserProfile, addNotification }) => {
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
-  const [isSystemMonitorModalOpen, setIsSystemMonitorModalOpen] = useState(false); // Added
+  const [isSystemMonitorModalOpen, setIsSystemMonitorModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const isArbiter = userProfile.id === 'arbiter_MVP_001'; 
@@ -38,7 +38,7 @@ export const Navbar: React.FC<NavbarProps> = ({ userProfile, setUserProfile, add
             </Link>
 
             {/* Desktop Menu */}
-            <div className="hidden md:flex items-center space-x-1"> {/* Reduced space-x slightly */}
+            <div className="hidden md:flex items-center space-x-1">
               {navLinks.map(link => (
                 <Link
                   key={link.name}
@@ -64,7 +64,6 @@ export const Navbar: React.FC<NavbarProps> = ({ userProfile, setUserProfile, add
                 <UserCircle size={20} className="mr-1" />
                 {userProfile.username}
               </button>
-               {/* Logout */}
               <button
                 onClick={() => {
                   addNotification("You have been logged out. User session would be cleared.", 'info');
@@ -138,7 +137,7 @@ export const Navbar: React.FC<NavbarProps> = ({ userProfile, setUserProfile, add
         setUserProfile={setUserProfile}
         addNotification={addNotification}
       />
-      <SystemMonitorModal // Added
+      <SystemMonitorModal
         isOpen={isSystemMonitorModalOpen}
         onClose={() => setIsSystemMonitorModalOpen(false)}
       />

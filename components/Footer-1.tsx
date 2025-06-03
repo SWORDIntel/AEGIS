@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Activity } from 'lucide-react'; // Or CheckSquare, TrendingUp
+import { Activity } from 'lucide-react'; 
 
 interface FooterProps {
   transactionsHandled: number;

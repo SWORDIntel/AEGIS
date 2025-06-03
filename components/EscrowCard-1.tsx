@@ -3,8 +3,8 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { Escrow, EscrowStatus, UserProfile } from '../types';
 import { formatDate, getParticipant } from '../utils/helpers';
-import { Eye, Edit3, Trash2, ShieldAlert, CheckCircle2, Clock, AlertTriangle, Shield, Users, DollarSign } from 'lucide-react'; // Added Users, DollarSign
-import { EscrowTimer } from './EscrowTimer';
+import { Eye, Trash2, ShieldAlert, CheckCircle2, Clock, AlertTriangle, Shield, Users, DollarSign } from 'lucide-react'; // Added Users, DollarSign
+import { EscrowTimer } from './EscrowTimer'; // Added import
 
 interface EscrowCardProps {
   escrow: Escrow;

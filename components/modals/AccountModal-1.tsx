@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { UserProfile, UserSettings, AddNotificationHandler, MoneroTransaction, GetTransfersParams } from '../../types';
-import { X, UserCircle, Key, Zap, ShieldCheck, Save, AlertTriangle, FileText, Lock, CheckSquare, RotateCcw, RefreshCw, Wallet, Server, Network, Activity, Unlock, List, ListFilter, ArrowDownUp, Shield, Scan } from 'lucide-react'; // Added Shield, Scan
+import { X, UserCircle, Key, Zap, ShieldCheck, Save, AlertTriangle, FileText, Lock, CheckSquare, RotateCcw, RefreshCw, Wallet, Server, Network, Activity, Unlock, List, Shield, Scan, ListFilter, ArrowDownUp } from 'lucide-react'; // Added Shield, Scan, ListFilter, ArrowDownUp
 import { encryptMnemonic, decryptMnemonic, getWalletTransfers, formatDate, generateId } from '../../utils/helpers';
 import { useLocalStorage } from '../../hooks/useLocalStorage';
 
@@ -41,7 +41,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose, use
   const [walletPassword, setWalletPassword] = useState('');
   const [restoreMnemonicInput, setRestoreMnemonicInput] = useState('');
 
-  const [encryptedMnemonicLS, setEncryptedMnemonicLS, removeEncryptedMnemonicLS] = useLocalStorage<string | null>('encryptedMoneroMnemonic', null);
+  const [encryptedMnemonicLS, setEncryptedMnemonicLS, removeEncryptedMnemonicLS] = useLocalStorage<string | null>('encryptedMoneroMnemonic_v1', null); // Use _v1 key
   const [isDecryptingUI, setIsDecryptingUI] = useState(false);
   const [isProcessingCrypto, setIsProcessingCrypto] = useState(false);
 
@@ -53,7 +53,6 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose, use
   const [generatedTotpSecret, setGeneratedTotpSecret] = useState('');
   const [totpVerificationInput, setTotpVerificationInput] = useState('');
   const [disableTotpInput, setDisableTotpInput] = useState('');
-
 
   const [nodeStatus, setNodeStatus] = useState<string>("N/A");
   const [blockchainHeight, setBlockchainHeight] = useState<string>("N/A");
@@ -67,7 +66,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose, use
   const [sortKey, setSortKey] = useState<TransactionSortKey>('timestamp');
   const [sortOrder, setSortOrder] = useState<TransactionSortOrder>('desc');
 
-  useEffect(() => {
+ useEffect(() => {
     let shouldSetDecryptingUI = false;
     if (encryptedMnemonicLS && !activeMnemonic && !pendingDecryptedMnemonic) {
       shouldSetDecryptingUI = true;
@@ -81,7 +80,8 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose, use
     } else {
       setIsDecryptingUI(false);
     }
-  }, [encryptedMnemonicLS, activeMnemonic, pendingDecryptedMnemonic, isDecryptingUI, isAwaitingTotpForUnlock, addNotification]);
+    setCurrentSettings(userProfile.settings); 
+  }, [encryptedMnemonicLS, activeMnemonic, pendingDecryptedMnemonic, isDecryptingUI, isAwaitingTotpForUnlock, addNotification, userProfile.settings]);
   
   const handleSettingChange = <K extends keyof UserSettings,>(key: K, value: UserSettings[K]) => {
     setCurrentSettings(prev => ({ ...prev, [key]: value }));
@@ -90,7 +90,6 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose, use
   const handleSaveChanges = () => {
     setUserProfile(prev => ({ ...prev, settings: currentSettings }));
     addNotification('Account settings saved successfully!', 'success');
-    // If TOTP setup was in progress but not completed, cancel it
     if (isTotpSetupMode) {
         setIsTotpSetupMode(false);
         setGeneratedTotpSecret('');
@@ -166,12 +165,12 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose, use
     setIsProcessingCrypto(true);
     try {
       const decrypted = await decryptMnemonic(encryptedMnemonicLS, walletPassword);
-      if (userProfile.settings.totpEnabled) {
+      if (userProfile.settings.totpEnabled) { 
         setPendingDecryptedMnemonic(decrypted);
         setIsAwaitingTotpForUnlock(true);
-        setIsDecryptingUI(false); // Hide password UI, show TOTP UI
+        setIsDecryptingUI(false); 
         addNotification("Password verified. Enter TOTP code to complete unlock.", "info");
-        setWalletPassword(''); // Clear password for security
+        setWalletPassword(''); 
       } else {
         setActiveMnemonic(decrypted);
         const newKeys = generateNewKeys("UNLOCKED");
@@ -215,7 +214,6 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose, use
         addNotification("Incorrect TOTP code. Please try again.", "error");
     }
   };
-
 
   const handleRestoreMnemonic = () => {
     if (!restoreMnemonicInput.trim()) {
@@ -317,7 +315,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose, use
   }
 
   const handleEnableTotp = () => {
-    const secret = `SECRET_${generateId().toUpperCase()}`; // More generic prefix
+    const secret = `SECRET_${generateId().toUpperCase()}`;
     setGeneratedTotpSecret(secret);
     setIsTotpSetupMode(true);
     addNotification("TOTP Setup: Scan QR and enter code.", "info");
@@ -326,7 +324,6 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose, use
   const handleVerifyAndEnableTotp = () => {
     if (totpVerificationInput === TOTP_VERIFICATION_CODE) {
         setCurrentSettings(prev => ({...prev, totpEnabled: true, totpSecretMock: generatedTotpSecret}));
-        // Note: handleSaveChanges() will persist this to userProfile and localStorage
         addNotification("TOTP enabled! Save settings to persist this.", "success");
         setIsTotpSetupMode(false);
         setTotpVerificationInput('');
@@ -336,6 +333,10 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose, use
   }
   
   const handleDisableTotp = () => {
+    if (!currentSettings.totpEnabled || !currentSettings.totpSecretMock) {
+      addNotification("TOTP is not currently enabled or secret is missing.", "warning");
+      return;
+    }
     if (disableTotpInput === TOTP_VERIFICATION_CODE) {
         setCurrentSettings(prev => ({...prev, totpEnabled: false, totpSecretMock: undefined}));
         addNotification("TOTP disabled. Save settings to persist this change.", "success");
@@ -370,7 +371,6 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose, use
   
   const otpAuthUrl = useMemo(() => {
     if (!generatedTotpSecret) return '';
-    // Use a URL-safe username or a generic identifier
     const issuer = "AegisProtocol";
     const accountName = userProfile.username.replace(/[^a-zA-Z0-9.-_@]/g, '');
     return `otpauth://totp/${issuer}:${accountName}?secret=${generatedTotpSecret}&issuer=${issuer}`;
@@ -586,7 +586,6 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose, use
             )}
           </div>
 
-          {/* Two-Factor Authentication Section */}
             <div className="border-t border-gray-700 pt-4">
                 <h3 className="text-lg font-semibold text-gray-200 mb-2 flex items-center"><Shield size={20} className="mr-2 text-teal-400" />Two-Factor Authentication</h3>
                 {!currentSettings.totpEnabled && !isTotpSetupMode && (
@@ -769,7 +768,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose, use
                           <div key={tx.txid} className="py-2 px-3 mb-2 bg-gray-800 rounded shadow-md">
                               <div className="flex justify-between items-center mb-1">
                                   <span className={`font-semibold text-sm ${
-                                      tx.type === 'in' || tx.type === 'pool' || (tx.type === 'pending' && (tx.destinations && tx.destinations.some(d => d.address.includes("your_address")) || !tx.destinations) ) // Generalized "your_address"
+                                      tx.type === 'in' || tx.type === 'pool' || (tx.type === 'pending' && (tx.destinations && tx.destinations.some(d => d.address.includes("your_address")) || !tx.destinations) )
                                       ? 'text-green-400' 
                                       : 'text-red-400'
                                   }`}>
