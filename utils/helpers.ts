@@ -1,5 +1,5 @@
 
-import { Escrow, UserProfile, GetTransfersParams, MoneroGetTransfersResponse, MoneroTransaction } from '../types';
+import { Escrow, UserProfile, GetTransfersParams, MoneroGetTransfersResponse, MoneroTransaction, BroadcastTxResponse } from '../types';
 
 // Basic ID generator (replace with a robust library like UUID in a real app)
 export const generateId = (): string => {
@@ -220,4 +220,152 @@ export const getWalletTransfers = async (
   }
 
   return response;
+};
+
+// Monero Daemon RPC Helpers
+
+/**
+ * Derives a Monero daemon RPC URL from a wallet RPC URL.
+ * Assumes standard Monero ports (18081 for mainnet wallet, 18089 for testnet wallet, etc.)
+ * and that daemon is running on the same host.
+ * This is a common convention but might need adjustment for specific setups.
+ * @param walletRpcUrl - The URL of the Monero wallet RPC server.
+ * @returns The derived URL for the Monero daemon RPC server.
+ */
+export const getDaemonRpcUrl = (walletRpcUrl: string): string => {
+  try {
+    const url = new URL(walletRpcUrl);
+    // Common default ports:
+    // Mainnet: Wallet 18081/18082, Daemon 18081 (but often separate or via 18089 for restricted)
+    // Testnet: Wallet 28081/28082, Daemon 28081 (or 28089)
+    // Stagenet: Wallet 38081/38082, Daemon 38081 (or 38089)
+
+    // A common scenario is wallet RPC on 18082 and daemon on 18081 or 18089 (restricted)
+    // This function makes a basic assumption. For more robust derivation,
+    // it might require configuration or knowledge of the specific network (mainnet/testnet).
+    // For now, let's assume daemon is on a port commonly associated with public daemon access,
+    // or the main daemon port if wallet is on a higher number.
+
+    let daemonPort = '18081'; // Default mainnet daemon
+    if (url.port === '18082' || url.port === '18083') { // Mainnet wallet (e.g. monero-wallet-rpc)
+      daemonPort = '18081'; // Or 18089 for restricted public access
+    } else if (url.port === '28082' || url.port === '28083') { // Testnet wallet
+      daemonPort = '28081';
+    } else if (url.port === '38082' || url.port === '38083') { // Stagenet wallet
+      daemonPort = '38081';
+    } else if (url.port === '18081') { // If wallet is already on daemon port, assume same for daemon.
+      daemonPort = '18081';
+    }
+    // If walletRpcUrl doesn't include a common wallet port, this might not be correct.
+    // A more advanced version could check hostname patterns or allow explicit daemon URL.
+
+    return `${url.protocol}//${url.hostname}:${daemonPort}/json_rpc`;
+  } catch (error) {
+    console.error("Error parsing wallet RPC URL:", error);
+    // Fallback or throw error, depending on desired strictness
+    // For now, returning a common default if parsing fails, though this is risky.
+    return 'http://127.0.0.1:18081/json_rpc';
+  }
+};
+
+/**
+ * Broadcasts a raw Monero transaction hex to a Monero daemon.
+ * @param daemonRpcUrl - The URL of the Monero daemon RPC server (e.g., http://127.0.0.1:18081/json_rpc).
+ * @param tx_as_hex - The raw transaction hex string.
+ * @returns A promise that resolves with the broadcast response.
+ */
+export const broadcastMoneroTransaction = async (
+  daemonRpcUrl: string,
+  tx_as_hex: string
+): Promise<BroadcastTxResponse> => {
+  const endpoint = daemonRpcUrl.endsWith('/json_rpc')
+    ? daemonRpcUrl.replace('/json_rpc', '/send_raw_transaction')
+    : `${daemonRpcUrl}/send_raw_transaction`;
+
+  console.log(`Broadcasting transaction to: ${endpoint}`);
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        tx_as_hex: tx_as_hex,
+        do_not_relay: false, // Set to true if you only want to check validity without relaying
+      }),
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error('Broadcast failed - Network error:', response.status, errorBody);
+      throw new Error(`Failed to broadcast transaction: ${response.status} ${response.statusText}. Body: ${errorBody}`);
+    }
+
+    const data = await response.json();
+    console.log('Broadcast response data:', data);
+
+    // The structure of a successful response can vary. A common one includes:
+    // { "status": "OK", "tx_hash": "...", "double_spend": false, ... }
+    // Or it might just be the status and other fields.
+    // An error response might be:
+    // { "status": "Failed", "reason": "...", ... }
+    if (data.status === 'Failed' || (data.error && data.error.message)) {
+        const reason = data.reason || (data.error ? data.error.message : 'Unknown reason');
+        console.error('Broadcast failed - Daemon error:', reason);
+        throw new Error(`Transaction broadcast rejected by daemon: ${reason}`);
+    }
+
+    // Assuming success if no explicit failure and status is OK or not "Failed"
+    // A more robust check might be needed based on actual daemon responses.
+    if (data.status && data.status !== "OK") {
+        console.warn("Broadcast status not OK:", data.status, data);
+        // Potentially throw an error here if non-OK status always means failure
+    }
+
+    return data; // This will be of type BroadcastTxResponse
+  } catch (error) {
+    console.error('Error broadcasting Monero transaction:', error);
+    // Re-throw the error so it can be caught by the caller
+    // Or return a structured error object
+    throw error;
+  }
+};
+
+/**
+ * Simulates an emergency override for an escrow transaction.
+ * This function DOES NOT interact with the Monero network.
+ * It's intended for administrative purposes to manually resolve an escrow
+ * by marking it as complete in favor of a specified recipient.
+ *
+ * @param escrowId - The ID of the escrow being overridden.
+ * @param recipientRole - Who the override is "paying" ('buyer' or 'seller').
+ * @param amountXMR - The amount of XMR to be "sent".
+ * @param overrideReason - The reason for this emergency action.
+ * @returns An object indicating the override was processed, with a simulated TXID.
+ */
+export const initiateEmergencyOverride = (
+  escrowId: string,
+  recipientRole: 'buyer' | 'seller',
+  amountXMR: number,
+  overrideReason: string
+): { status: string; simulatedTxId: string; message: string; recipientRole: 'buyer' | 'seller'; amountXMR: number; reason: string } => {
+  const simulatedTxId = `OVERRIDE_${generateId().toUpperCase()}_${escrowId.slice(0, 4)}`;
+  const message = `Emergency override processed for escrow ${escrowId}.
+    Simulated ${amountXMR} XMR transaction to ${recipientRole}.
+    Reason: ${overrideReason}. Simulated TXID: ${simulatedTxId}`;
+
+  console.warn(`EMERGENCY OVERRIDE: ${message}`);
+
+  // In a real application, this event should be securely logged for audit.
+  // E.g., send to a secure logging service or admin dashboard.
+
+  return {
+    status: "OVERRIDE_SUCCESSFUL",
+    simulatedTxId: simulatedTxId,
+    message: message,
+    recipientRole: recipientRole,
+    amountXMR: amountXMR,
+    reason: overrideReason,
+  };
 };
