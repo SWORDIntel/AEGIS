@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Escrow, ChatMessage, EscrowStatus, UserProfile, ArbiterRuling, DefaultOutcome, EscrowParticipant, AddNotificationHandler } from '../types';
-import { formatDate, generateId, getParticipant, getOtherParticipantUsername } from '../utils/helpers';
-import { ChevronLeft, Send, Paperclip, ShieldAlert, CheckCircle, XCircle, MessageSquare, DollarSign, Info, Clock, Users, AlertTriangle, Award, DivideSquare, TimerOff, ShieldCheck, ShieldX, HelpCircle } from 'lucide-react';
+import { Escrow, ChatMessage, EscrowStatus, UserProfile, ArbiterRuling, DefaultOutcome, EscrowParticipant, AddNotificationHandler, BroadcastTxResponse, UserSettings } from '../types'; // Added BroadcastTxResponse, UserSettings
+import { formatDate, generateId, getParticipant, getOtherParticipantUsername, getDaemonRpcUrl, broadcastMoneroTransaction } from '../utils/helpers'; // Added getDaemonRpcUrl, broadcastMoneroTransaction
+import { ChevronLeft, Send, Paperclip, ShieldAlert, CheckCircle, XCircle, MessageSquare, DollarSign, Info, Clock, Users, AlertTriangle, Award, DivideSquare, TimerOff, ShieldCheck, ShieldX, HelpCircle, Loader2 } from 'lucide-react'; // Added Loader2
 import { ConfirmActionModal } from '../components/modals/ConfirmActionModal';
 
 interface EscrowDetailPageProps {
@@ -119,6 +119,12 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
   const navigate = useNavigate();
   const [escrow, setEscrow] = useState<Escrow | null>(null);
   const [actionToConfirm, setActionToConfirm] = useState<{ type: string; title: string; message: string | React.ReactNode; data?: any; confirmButtonClass?: string, confirmButtonText?: string } | null>(null);
+
+  // State for transaction broadcasting
+  const [signedTxHex, setSignedTxHex] = useState<string>(""); // Placeholder - to be populated by preceding steps
+  const [isBroadcasting, setIsBroadcasting] = useState<boolean>(false);
+  const [broadcastTxId, setBroadcastTxId] = useState<string | null>(null);
+  const [broadcastError, setBroadcastError] = useState<string | null>(null);
 
   useEffect(() => {
     const foundEscrow = escrows.find(e => e.id === id);
@@ -255,6 +261,60 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
     setActionToConfirm({ type, title, message, data, confirmButtonClass, confirmButtonText });
   };
 
+  const handleBroadcastFundingTx = async () => {
+    if (!signedTxHex.trim()) {
+      addNotification("No signed transaction available to broadcast. Please paste the hex.", "warning");
+      return;
+    }
+    if (!currentUser.settings?.moneroNodeUrl) {
+      addNotification("Monero Wallet RPC URL not set in your profile settings.", "error");
+      return;
+    }
+
+    setIsBroadcasting(true);
+    setBroadcastError(null);
+    setBroadcastTxId(null);
+    addNotification("Broadcasting transaction...", "info");
+
+    const walletRpcUrl = currentUser.settings.moneroNodeUrl;
+    const derivedDaemonUrl = getDaemonRpcUrl(walletRpcUrl);
+
+    if (!derivedDaemonUrl) {
+        addNotification("Could not derive Monero Daemon URL from Wallet RPC URL.", "error");
+        setIsBroadcasting(false);
+        return;
+    }
+
+    try {
+      const result = await broadcastMoneroTransaction(derivedDaemonUrl, signedTxHex);
+      if (result.success) {
+        setBroadcastTxId(result.tx_hash || 'Broadcasted (TXID not returned by daemon)');
+        addNotification(`Transaction broadcast successfully. TXID: ${result.tx_hash || '(N/A)'}`, 'success');
+        // TODO: Update escrow status locally (e.g., to AWAITING_FUNDING_CONFIRMATION or similar)
+        // This might involve calling a prop function like `updateEscrowStatus` or refetching escrow data
+        // For now, just log and notify:
+        console.log("Transaction broadcast success, escrow status should be updated.", result);
+        if (escrow && escrow.status === EscrowStatus.PENDING_FUNDING && userRole === 'buyer') { // Conceptual update
+            handleAction('fund_buyer'); // This existing handler updates status
+        } else if (escrow && escrow.status === EscrowStatus.PENDING_FUNDING && userRole === 'seller') {
+            handleAction('fund_seller');
+        }
+
+      } else {
+        const errorMsg = `Broadcast failed: ${result.reason || result.status || 'Unknown daemon error'}`;
+        setBroadcastError(errorMsg);
+        addNotification(errorMsg, "error");
+      }
+    } catch (error: any) {
+      console.error("Broadcast transaction error:", error);
+      const errorMsg = `Broadcast error: ${error.message || 'Unknown error'}`;
+      setBroadcastError(errorMsg);
+      addNotification(errorMsg, "error");
+    } finally {
+      setIsBroadcasting(false);
+    }
+  };
+
   if (!escrow) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
@@ -359,16 +419,72 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
         <p className="text-xs text-gray-500 mb-1">Multi-Sig Address (Mock): <span className="font-mono text-gray-400">{escrow.multiSigAddress}</span></p>
         <p className="text-xs text-gray-500 mb-6">Created: {formatDate(escrow.creationDate)} | Last Update: {formatDate(escrow.lastUpdateDate)}</p>
 
+        {/* Transaction Broadcasting Section - Conceptual Placement */}
+        {/* This button would ideally only show when appropriate (e.g. status is PENDING_FUNDING and user is the funder) */}
+        {/* For now, let's assume it's for the buyer to fund conceptually */}
+        {(escrow.status === EscrowStatus.PENDING_FUNDING || escrow.status === EscrowStatus.SELLER_CONFIRMED_ITEM) && userRole === 'buyer' && !escrow.buyer.hasFunded && (
+          <div className="my-6 p-4 bg-gray-700 rounded-lg">
+            <h3 className="text-lg font-semibold text-yellow-300 mb-3">Fund Escrow (Step 2: Broadcast)</h3>
+            <p className="text-xs text-gray-400 mb-2">
+              (Conceptual) Assuming you have signed the funding transaction in Step 1 (e.g., via your Monero wallet software).
+              Enter the signed transaction hex below to broadcast it.
+            </p>
+            <textarea
+              className="w-full p-2 bg-gray-600 text-white border border-gray-500 rounded-md mb-3 scrollbar-thin scrollbar-thumb-gray-500 scrollbar-track-gray-700"
+              rows={3}
+              placeholder="Paste signed transaction hex here..."
+              value={signedTxHex}
+              onChange={(e) => setSignedTxHex(e.target.value)}
+              disabled={isBroadcasting}
+            />
+            <button
+              onClick={handleBroadcastFundingTx}
+              disabled={isBroadcasting || !signedTxHex.trim() || !currentUser.settings?.moneroNodeUrl}
+              className="w-full flex items-center justify-center px-4 py-2 bg-orange-500 hover:bg-orange-400 text-white font-semibold rounded-md transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed"
+            >
+              {isBroadcasting ? (
+                <Loader2 size={20} className="mr-2 animate-spin" />
+              ) : (
+                <Send size={20} className="mr-2" />
+              )}
+              {isBroadcasting ? 'Broadcasting...' : 'Broadcast Funding Transaction'}
+            </button>
+            {!currentUser.settings?.moneroNodeUrl && (
+                <p className="text-xs text-red-400 mt-1">Monero Wallet RPC URL not set in your profile. Cannot determine daemon URL.</p>
+            )}
+            {broadcastTxId && (
+              <p className="text-sm text-green-400 mt-2">Broadcast successful! TXID: <span className="font-mono break-all">{broadcastTxId}</span></p>
+            )}
+            {broadcastError && (
+              <p className="text-sm text-red-400 mt-2">Broadcast Error: {broadcastError}</p>
+            )}
+          </div>
+        )}
+
+
         {!isTerminalState && (
             <>
                 <h3 className="text-xl font-semibold text-gray-200 mb-3 flex items-center"><AlertTriangle size={22} className="mr-2 text-yellow-400"/>Your Actions</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mb-6">
+                    {/* Simplified funding buttons - actual funding would be via the broadcast mechanism above */}
                     {userRole === 'buyer' && canFund('buyer') && (
-                        <button onClick={() => requestActionConfirmation('fund_buyer', 'Confirm Funding', 'Are you sure you want to mark this escrow as funded from your side?', undefined, 'bg-green-600 hover:bg-green-500', 'Confirm Buyer Funding')} className="w-full bg-green-600 hover:bg-green-500 text-white font-semibold py-2 px-4 rounded-md transition-colors">Fund Escrow (as Buyer)</button>
+                        <button
+                            onClick={() => addNotification("Please use the 'Broadcast Funding Transaction' section after signing your transaction.", "info")}
+                            className="w-full bg-green-700 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded-md transition-colors"
+                            title="This is now handled by the broadcast section"
+                        >
+                            Fund Escrow (Buyer) - See Broadcast Section
+                        </button>
                     )}
-                    {userRole === 'seller' && canFund('seller') && (
-                        <button onClick={() => requestActionConfirmation('fund_seller', 'Confirm Funding & Item', 'Are you sure you want to mark this escrow as funded and item confirmed from your side?', undefined, 'bg-green-600 hover:bg-green-500', 'Confirm Seller Funding')} className="w-full bg-green-600 hover:bg-green-500 text-white font-semibold py-2 px-4 rounded-md transition-colors">Fund Escrow (as Seller)</button>
-                    )}
+                     {userRole === 'seller' && canFund('seller') && (
+                         <button
+                            onClick={() => addNotification("Please use the 'Broadcast Funding Transaction' section after signing your transaction (if applicable for seller-side funding).", "info")}
+                            className="w-full bg-green-700 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded-md transition-colors"
+                            title="This is now handled by the broadcast section"
+                         >
+                            Fund Escrow (Seller) - See Broadcast Section
+                         </button>
+                     )}
                     {userRole === 'buyer' && canConfirm('buyer') && (
                          <button onClick={() => requestActionConfirmation('confirm_buyer', 'Confirm Satisfaction', 'Are you sure you are satisfied with the item/service and want to release funds to the seller?', undefined, 'bg-sky-500 hover:bg-sky-400', 'Confirm & Release')} className="w-full bg-sky-500 hover:bg-sky-400 text-white font-semibold py-2 px-4 rounded-md transition-colors">Confirm Satisfaction</button>
                     )}

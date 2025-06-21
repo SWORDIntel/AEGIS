@@ -65,7 +65,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose, use
       setIsDecryptingUI(false);
     }
   }, [encryptedMnemonicLS, mockMnemonic, userProfile.moneroPrivateKey]); // Adjust dependencies
-  
+
   const handleSettingChange = <K extends keyof UserSettings,>(key: K, value: UserSettings[K]) => {
     setCurrentSettings(prev => ({ ...prev, [key]: value }));
   };
@@ -150,7 +150,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose, use
     setIsProcessingCrypto(true);
     try {
       const decrypted = await decryptMnemonic(encryptedMnemonicLS, walletPassword);
-      setMockMnemonic(decrypted); 
+      setMockMnemonic(decrypted);
       const newKeys = generateNewMockKeys("DECRYPTED");
       setUserProfile(prev => ({
           ...prev,
@@ -159,8 +159,8 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose, use
       }));
       setShowKeys(true);
       addNotification("Wallet unlocked successfully and demo keys updated!", "success"); // Changed message
-      setIsDecryptingUI(false); 
-      setWalletPassword(''); 
+      setIsDecryptingUI(false);
+      setWalletPassword('');
     } catch (error) {
       console.error("Decryption error:", error);
       let message = "Decryption failed. Incorrect password or corrupted data. Please try again.";
@@ -378,10 +378,10 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose, use
                 </button>
                  <button
                   onClick={() => {
-                    if (isProcessingCrypto) return; 
-                    setMockMnemonic(null); 
-                    setBackupConfirmed1(false); 
-                    setBackupConfirmed2(false); 
+                    if (isProcessingCrypto) return;
+                    setMockMnemonic(null);
+                    setBackupConfirmed1(false);
+                    setBackupConfirmed2(false);
                     setWalletPassword('');
                     if (encryptedMnemonicLS && !userProfile.moneroPrivateKey) setIsDecryptingUI(true); // Revert to unlock prompt if applicable
                   }}
@@ -486,8 +486,8 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose, use
                 <div className="bg-gray-700 p-3 rounded-md space-y-2">
                     <div className="flex justify-between items-center">
                         <h4 className="text-md font-semibold text-gray-300 flex items-center"><List size={18} className="mr-2"/>Recent Transactions</h4>
-                        <button 
-                            onClick={handleScanTransactions} 
+                        <button
+                            onClick={handleScanTransactions}
                             disabled={isScanningTransactions || !currentSettings.moneroNodeUrl}
                             className="text-xs px-2 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded-md flex items-center disabled:bg-gray-500 disabled:cursor-not-allowed"
                         >
@@ -507,16 +507,16 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose, use
                                 <div className="flex justify-between items-center mb-1">
                                     <span className={`font-semibold text-sm ${
                                         tx.type === 'in' || tx.type === 'pool' || tx.type === 'pending' && !tx.destinations // Simple heuristic for incoming-like
-                                        ? 'text-green-400' 
+                                        ? 'text-green-400'
                                         : 'text-red-400'
                                     }`}>
-                                    {tx.type === 'in' ? 'Incoming' : 
-                                     tx.type === 'out' ? 'Outgoing' : 
+                                    {tx.type === 'in' ? 'Incoming' :
+                                     tx.type === 'out' ? 'Outgoing' :
                                      tx.type.charAt(0).toUpperCase() + tx.type.slice(1)}
                                     </span>
                                     <span className={`font-mono text-sm ${
                                         tx.type === 'in' || tx.type === 'pool' || tx.type === 'pending' && !tx.destinations
-                                        ? 'text-green-500' 
+                                        ? 'text-green-500'
                                         : 'text-red-500'
                                     }`}>
                                     {tx.type === 'out' ? '-' : '+'}

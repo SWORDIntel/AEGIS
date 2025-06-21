@@ -127,29 +127,29 @@ export interface MoneroTransaction {
   height: number;         // Block height of confirmation (0 if not mined or pending)
   timestamp: number;      // POSIX timestamp of confirmation or submission
   unlock_time: number;    // Number of blocks until safely spendable
-  
+
   address?: string;        // The other party's address for outgoing, or own subaddress for incoming.
   payment_id: string;     // Payment ID (often "0000000000000000" if not set)
   note: string;           // User-provided note
-  
+
   confirmations?: number;  // Number of confirmations (can be 0 for pending/pool)
   locked?: boolean;        // Whether the transaction/outputs are locked
-  
+
   subaddr_index?: MoneroSubaddressIndex;       // Own subaddress index involved
   subaddr_indices?: MoneroSubaddressIndex[]; // Multiple own subaddresses involved (less common for a single tx entry)
-  
+
   amounts?: number[];      // If a single entry represents multiple distinct amounts (e.g. to multiple subaddresses in one tx)
-  
+
   // Primarily for outgoing transfers
-  destinations?: MoneroTransactionDestination[]; 
-  
+  destinations?: MoneroTransactionDestination[];
+
   // Optional fields that might be present
   double_spend_seen?: boolean;
   suggested_confirmations_threshold?: number;
-  
+
   // Fields that might be more relevant for incoming transfers if enriched later,
   // but `get_transfers` provides them per transfer entry
-  key_image?: string; 
+  key_image?: string;
   label?: string;          // Label of the subaddress
   spent?: boolean;         // If this specific output (for incoming) has been spent
 }
@@ -174,4 +174,26 @@ export interface GetTransfersResponse {
   pending?: MoneroTransaction[];
   failed?: MoneroTransaction[];
   pool?: MoneroTransaction[];
+}
+
+export interface BroadcastTxResponse {
+  success: boolean;
+  txHash?: string; // Not directly from /send_raw_transaction, but kept for potential client-side derivation placeholder
+  status?: string; // e.g., "OK", "Failed", "BUSY"
+  reason?: string; // More detailed error message from the daemon
+  double_spend?: boolean;
+  fee_too_low?: boolean;
+  invalid_input?: boolean;
+  invalid_output?: boolean;
+  low_mixin?: boolean;
+  not_rct?: boolean;
+  not_relayed?: boolean;
+  overspend?: boolean;
+  too_big?: boolean;
+  // Additional fields that might be present in the daemon's response for /send_raw_transaction
+  tx_hash?: string; // This is actually the TX hash if successful and relayed, despite previous notes.
+  tx_key?: string; // If relayed
+  sanitized?: boolean;
+  credits?: number; // If RPC payment is enabled
+  top_hash?: string; // If RPC payment is enabled
 }

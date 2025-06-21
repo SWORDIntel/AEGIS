@@ -1,5 +1,5 @@
 
-import { Escrow, UserProfile, MoneroTransaction, GetTransfersParams, GetTransfersResponse } from '../types'; // Added MoneroTransaction, GetTransfersParams, GetTransfersResponse
+import { Escrow, UserProfile, MoneroTransaction, GetTransfersParams, GetTransfersResponse, BroadcastTxResponse } from '../types'; // Added MoneroTransaction, GetTransfersParams, GetTransfersResponse, BroadcastTxResponse
 
 // Basic ID generator (replace with a robust library like UUID in a real app)
 export const generateId = (): string => {
@@ -197,7 +197,7 @@ export async function getWalletTransfers(
         // For now, assume an empty result is valid and means no transfers matched.
         return { }; // Or return responseData.result if it exists but is empty e.g. {}
     }
-    
+
     return responseData.result as GetTransfersResponse;
 
   } catch (error) {
@@ -206,5 +206,149 @@ export async function getWalletTransfers(
       throw error; // Re-throw the error to be handled by the caller
     }
     throw new Error('An unknown error occurred while fetching wallet transfers.');
+  }
+}
+
+/**
+ * Broadcasts a raw Monero transaction to a daemon.
+ * @param daemonRpcUrl The URL of the Monero daemon's RPC endpoint (e.g., http://127.0.0.1:18081).
+ * @param tx_as_hex The raw transaction hex string.
+ * @returns A Promise that resolves to the BroadcastTxResponse.
+ */
+export async function broadcastMoneroTransaction(
+  daemonRpcUrl: string,
+  tx_as_hex: string
+): Promise<BroadcastTxResponse> {
+  const endpoint = daemonRpcUrl.endsWith('/') ? daemonRpcUrl + 'send_raw_transaction' : daemonRpcUrl + '/send_raw_transaction';
+  const payload = {
+    tx_as_hex: tx_as_hex,
+    do_not_relay: false, // Explicitly set to false, though it's the default
+  };
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      // Try to get more details from response body if possible for non-2xx errors
+      let errorBody = '';
+      try {
+        errorBody = await response.text();
+      } catch (textError) {
+        // Ignore if can't read body
+      }
+      throw new Error(`HTTP error! status: ${response.status} ${response.statusText}. Body: ${errorBody}`);
+    }
+
+    const data = await response.json();
+
+    // Interpret the response from /send_raw_transaction
+    // See: https://monerodocs.org/json-rpc/send_raw_transaction/
+    const success = data.status === "OK" && !data.double_spend && !data.fee_too_low &&
+                    !data.invalid_input && !data.invalid_output && !data.low_mixin &&
+                    !data.not_rct && !data.overspend && !data.too_big;
+
+    return {
+      success: success,
+      txHash: data.tx_hash, // Corrected to use tx_hash as per updated interface
+      status: data.status,
+      reason: data.reason,
+      double_spend: data.double_spend,
+      fee_too_low: data.fee_too_low,
+      invalid_input: data.invalid_input,
+      invalid_output: data.invalid_output,
+      low_mixin: data.low_mixin,
+      not_rct: data.not_rct,
+      not_relayed: data.not_relayed, // This indicates if it was NOT relayed despite status OK
+      overspend: data.overspend,
+      too_big: data.too_big,
+      // Include other fields from BroadcastTxResponse that are in data
+      tx_key: data.tx_key,
+      sanitized: data.sanitized,
+      credits: data.credits,
+      top_hash: data.top_hash,
+    };
+
+  } catch (error) {
+    console.error('Error broadcasting Monero transaction:', error);
+    if (error instanceof Error) {
+      // Prepend a more specific message if it's a generic fetch error (e.g. network down)
+      if (error.message.startsWith('Network response was not ok') || error.message.startsWith('HTTP error!')) {
+         throw error;
+      }
+      if (error.name === 'TypeError' && error.message.includes('fetch')) { // For Node.js like fetch errors for network issues
+        throw new Error(`Network error or daemon unreachable: ${error.message}`);
+      }
+       throw new Error(`Failed to broadcast transaction: ${error.message}`);
+    }
+    throw new Error('An unknown error occurred while broadcasting the transaction.');
+  }
+}
+
+/**
+ * Attempts to derive a Monero daemon RPC URL from a wallet RPC URL.
+ * Replaces common wallet ports with common daemon ports.
+ * @param walletRpcUrl - The URL of the Monero wallet RPC.
+ * @returns A guessed daemon RPC URL.
+ */
+export function getDaemonRpcUrl(walletRpcUrl: string): string {
+  if (!walletRpcUrl) return ''; // Or throw an error, or return a default
+
+  // Common wallet RPC ports and their typical daemon RPC counterparts
+  const portMappings: Record<string, string> = {
+    // Standard mainnet wallet ports
+    '18082': '18081', // Default JSON RPC
+    '18083': '18081', // Often used for restricted RPC
+    // Standard testnet wallet ports
+    '28082': '28081', // Testnet JSON RPC
+    '28083': '28081', // Testnet restricted RPC
+    // Standard stagenet wallet ports
+    '38082': '38081', // Stagenet JSON RPC
+    '38083': '38081', // Stagenet restricted RPC
+    // Less common, but possible for stagenet/testnet if daemon uses 18089/18092 etc.
+    // For simplicity, we primarily target the default daemon port 18081 (or testnet/stagenet equivalents)
+    // If daemon is on a custom port not paired conventionally with wallet, this basic guess might not work.
+    // Community examples:
+    '48082': '48081', // Another possible testnet/stagenet wallet RPC port
+  };
+
+  try {
+    const url = new URL(walletRpcUrl);
+    const currentPort = url.port;
+
+    if (portMappings[currentPort]) {
+      url.port = portMappings[currentPort];
+      return url.toString();
+    }
+
+    // If port is not in mappings, try a common pattern: subtract 1 from wallet port
+    // This is a heuristic and might not always be correct.
+    const numericPort = parseInt(currentPort, 10);
+    if (!isNaN(numericPort) && numericPort > 1000) { // Basic sanity check for numeric port
+        // Example: 18082 -> 18081, 28082 -> 28081
+        if (numericPort % 10 === 2) {
+            url.port = (numericPort - 1).toString();
+            return url.toString();
+        }
+    }
+
+    // Fallback: if no specific wallet port is matched or derived,
+    // assume the provided URL might be a base path and the daemon is on a standard port relative to that host.
+    // Or, it might be the daemon URL itself. For send_raw_transaction, we don't append /json_rpc.
+    // This function's primary goal is port transformation. If it can't do that, return original.
+    // The caller (`broadcastMoneroTransaction`) will append `/send_raw_transaction`.
+    // If walletRpcUrl was already a daemon URL (e.g. http://127.0.0.1:18081), it should pass through.
+    return walletRpcUrl;
+
+  } catch (e) {
+    console.error("Error parsing wallet RPC URL for daemon URL conversion:", e);
+    // If URL parsing fails, return the original URL; it might be a simple hostname
+    // or already a daemon URL that's not a full http/https URL.
+    return walletRpcUrl;
   }
 }
