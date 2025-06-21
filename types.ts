@@ -148,3 +148,31 @@ export interface MoneroGetTransfersResponse {
   failed?: MoneroTransaction[];
   // Other fields like "denied" or "unconfirmed_out" can be added if needed
 }
+
+/**
+ * Represents the typical response from the Monero daemon's /send_raw_transaction endpoint.
+ * The fields can vary slightly based on success or failure.
+ */
+export interface BroadcastTxResponse {
+  status: string; // "OK", "Failed", or other statuses.
+  tx_hash?: string; // Hash of the transaction if successfully broadcasted.
+  reason?: string; // Reason for failure, if any.
+  double_spend?: boolean;
+  fee_too_low?: boolean;
+  invalid_input?: boolean;
+  invalid_output?: boolean;
+  low_mixin?: boolean;
+  not_relayed?: boolean;
+  overspend?: boolean;
+  too_big?: boolean;
+  tx_extra_too_big?: boolean;
+  // The daemon might also return an error object for more critical failures
+  error?: {
+    code: number;
+    message: string;
+  };
+  // The following are less common directly in send_raw_transaction but good to be aware of
+  credits?: number; // Cost of the RPC call (if applicable)
+  top_hash?: string; // Hash of the highest block known to the daemon
+  untrusted?: boolean; // If the daemon is not fully synced or in a bad state
+}

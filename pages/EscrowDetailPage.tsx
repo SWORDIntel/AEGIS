@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Escrow, ChatMessage, EscrowStatus, UserProfile, ArbiterRuling, DefaultOutcome, EscrowParticipant, AddNotificationHandler } from '../types';
-import { formatDate, generateId, getParticipant, getOtherParticipantUsername } from '../utils/helpers';
-import { ChevronLeft, Send, Paperclip, ShieldAlert, CheckCircle, XCircle, MessageSquare, DollarSign, Info, Clock, Users, AlertTriangle, Award, DivideSquare, TimerOff, ShieldCheck, ShieldX, HelpCircle, FileText, Filter as FilterIcon } from 'lucide-react';
+import { Escrow, ChatMessage, EscrowStatus, UserProfile, ArbiterRuling, DefaultOutcome, EscrowParticipant, AddNotificationHandler, BroadcastTxResponse } from '../types';
+import { formatDate, generateId, getParticipant, getOtherParticipantUsername, getDaemonRpcUrl, broadcastMoneroTransaction, initiateEmergencyOverride } from '../utils/helpers';
+import { ChevronLeft, Send, Paperclip, ShieldAlert, CheckCircle, XCircle, MessageSquare, DollarSign, Info, Clock, Users, AlertTriangle, Award, DivideSquare, TimerOff, ShieldCheck, ShieldX, HelpCircle, FileText, Filter as FilterIcon, Loader2, ExternalLink, Zap } from 'lucide-react';
 import { ConfirmActionModal } from '../components/modals/ConfirmActionModal';
 import { EscrowTimer } from '../components/EscrowTimer'; // Added import
 
@@ -143,6 +143,14 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
   const [activeTab, setActiveTab] = useState<ActiveTab>('details');
   const [evidenceFilter, setEvidenceFilter] = useState<'all' | 'buyer' | 'seller'>('all');
 
+  // State for transaction broadcasting
+  const [isBroadcasting, setIsBroadcasting] = useState(false);
+  const [broadcastTxId, setBroadcastTxId] = useState<string | null>(null);
+  const [broadcastError, setBroadcastError] = useState<string | null>(null);
+  // State for the signed transaction hex (to be provided by user or wallet integration later)
+  const [signedTxHex, setSignedTxHex] = useState<string>(''); // Placeholder for now
+  const [overrideTxId, setOverrideTxId] = useState<string | null>(null); // For displaying simulated TXID from override
+
   useEffect(() => {
     const foundEscrow = escrows.find(e => e.id === id);
     if (foundEscrow) {
@@ -188,16 +196,51 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
 
   const handleAction = (actionType: string, data?: any) => {
     if (!escrow) return;
+
+    // For funding actions, we will now trigger the broadcast flow.
+    // The actual state update (hasFunded = true) will happen after successful broadcast.
+    if (actionType === 'fund_buyer') {
+        // In a real scenario, the signed TX hex would be obtained after user confirms funding details
+        // and signs the transaction with their wallet.
+        // For now, we'll use a placeholder and expect it to be in `signedTxHex` state.
+        // We'll also open a modal or section for the user to paste it.
+        // For this step, let's assume `signedTxHex` is ready for broadcast.
+
+        // TODO: Replace this with actual signed TX hex when available
+        const placeholderTxHex = "PASTE_SIGNED_TRANSACTION_HEX_HERE";
+        if (!signedTxHex && actionType === 'fund_buyer') {
+             addNotification("Please provide the signed transaction hex to broadcast.", "warning");
+             // We might want to show a modal here to input the hex
+             // For now, just preventing action if hex is missing.
+             // Let's set a dummy one for now to proceed with broadcast logic for testing.
+             if (!signedTxHex) {
+                console.warn("Using dummy transaction hex for broadcasting.");
+                // setSignedTxHex("dummy_tx_hex_for_testing_needs_to_be_long_enough_for_monero_tx_hex_usually_very_long_string_of_hex_characters_abcdef1234567890...");
+             }
+             // return; // Uncomment this if strict about requiring user input first
+        }
+
+        handleBroadcastTransaction(actionType === 'fund_buyer' ? 'buyer' : 'seller');
+        setActionToConfirm(null); // Close confirmation modal if it was open
+        return; // We don't want to proceed with the old logic for this action
+    }
+
     let updatedEscrow = { ...escrow };
     let notificationMessage = '';
 
+    // Handle emergency overrides first
+    if (actionType === 'override_to_buyer') {
+      handleEmergencyOverride('buyer');
+      return;
+    }
+    if (actionType === 'override_to_seller') {
+      handleEmergencyOverride('seller');
+      return;
+    }
+
     switch (actionType) {
-      case 'fund_buyer':
-        updatedEscrow.buyer.hasFunded = true;
-        notificationMessage = `Buyer funded escrow: "${escrow.title}"`;
-        if (updatedEscrow.seller.hasFunded) updatedEscrow.status = EscrowStatus.ACTIVE;
-        else updatedEscrow.status = EscrowStatus.BUYER_FUNDED;
-        break;
+      // fund_buyer is now handled by handleBroadcastTransaction
+      // fund_seller might also involve broadcasting in a real system. For now, manual update.
       case 'fund_seller':
         updatedEscrow.seller.hasFunded = true;
         updatedEscrow.seller.hasConfirmed = true; 
@@ -272,8 +315,118 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
     setActionToConfirm(null); 
   };
 
+  const handleBroadcastTransaction = async (fundingParty: 'buyer' | 'seller') => {
+    if (!escrow || !currentUser.settings.moneroNodeUrl) {
+      addNotification("Configuration error: Monero node URL is not set.", "error");
+      setBroadcastError("Monero node URL is not set in user settings.");
+      return;
+    }
+    if (!signedTxHex) {
+        addNotification("Error: Signed transaction hex is missing.", "error");
+        setBroadcastError("Signed transaction hex is missing. Cannot broadcast.");
+        return;
+    }
+
+    setIsBroadcasting(true);
+    setBroadcastError(null);
+    setBroadcastTxId(null);
+
+    try {
+      // Assume moneroNodeUrl is the WALLET RPC URL, derive daemon URL from it.
+      // If moneroNodeUrl is already a DAEMON RPC URL, getDaemonRpcUrl might need adjustment
+      // or we could have separate settings for wallet and daemon URLs.
+      const daemonRpcUrl = getDaemonRpcUrl(currentUser.settings.moneroNodeUrl);
+      addNotification(`Attempting to broadcast to daemon at ${daemonRpcUrl}...`, "info");
+
+      const response: BroadcastTxResponse = await broadcastMoneroTransaction(daemonRpcUrl, signedTxHex);
+
+      if (response.status === "OK" && response.tx_hash) {
+        setBroadcastTxId(response.tx_hash);
+        addNotification(`Transaction broadcasted successfully! TXID: ${response.tx_hash}`, "success");
+
+        // Now update the escrow state
+        setEscrow(prevEscrow => {
+          if (!prevEscrow) return null;
+          const updatedEscrow = { ...prevEscrow };
+          let notificationMessage = '';
+
+          if (fundingParty === 'buyer') {
+            updatedEscrow.buyer.hasFunded = true;
+            notificationMessage = `Buyer successfully funded escrow: "${prevEscrow.title}" (TXID: ${response.tx_hash})`;
+            if (updatedEscrow.seller.hasFunded) updatedEscrow.status = EscrowStatus.ACTIVE;
+            else updatedEscrow.status = EscrowStatus.BUYER_FUNDED;
+          } else { // fundingParty === 'seller'
+            // Note: Seller funding also confirming item in current logic. If broadcast is separate, this might change.
+            updatedEscrow.seller.hasFunded = true;
+            updatedEscrow.seller.hasConfirmed = true;
+            notificationMessage = `Seller successfully funded & confirmed for escrow: "${prevEscrow.title}" (TXID: ${response.tx_hash})`;
+            if (updatedEscrow.buyer.hasFunded) updatedEscrow.status = EscrowStatus.ACTIVE;
+            else updatedEscrow.status = EscrowStatus.SELLER_CONFIRMED_ITEM;
+          }
+          updateEscrow(updatedEscrow, notificationMessage);
+          return updatedEscrow;
+        });
+
+      } else {
+        const reason = response.reason || response.error?.message || "Unknown error during broadcast.";
+        setBroadcastError(`Broadcast failed: ${reason}`);
+        addNotification(`Transaction broadcast failed: ${reason}`, "error");
+      }
+    } catch (error: any) {
+      console.error("Broadcast transaction error:", error);
+      const errorMessage = error.message || "An unexpected error occurred during broadcast.";
+      setBroadcastError(errorMessage);
+      addNotification(`Broadcast error: ${errorMessage}`, "error");
+    } finally {
+      setIsBroadcasting(false);
+      // setSignedTxHex(''); // Clear the hex after attempting broadcast
+    }
+  };
+
   const requestActionConfirmation = (type: string, title: string, message: string | React.ReactNode, data?:any, confirmButtonClass?: string, confirmButtonText?: string) => {
+    // If the action is to fund, and we don't have the signedTxHex yet,
+    // we might want to show a different modal or an input field first.
+    // For now, the confirmation modal will trigger handleAction, which then calls handleBroadcast.
+    if (type === 'fund_buyer' && !signedTxHex) {
+        // TODO: Implement a modal to input signedTxHex if it's empty.
+        // For now, we're proceeding and it will use a dummy or show an error.
+        // This is now handled by the button's onClick directly.
+    }
     setActionToConfirm({ type, title, message, data, confirmButtonClass, confirmButtonText });
+  };
+
+  const handleEmergencyOverride = (recipientRole: 'buyer' | 'seller') => {
+    if (!escrow) return;
+
+    const reason = prompt(`EMERGENCY OVERRIDE: Please provide a reason for overriding in favor of ${recipientRole}. This is a critical action and will be logged.`);
+    if (!reason) {
+      addNotification("Emergency override cancelled: No reason provided.", "warning");
+      return;
+    }
+
+    const overrideResult = initiateEmergencyOverride(escrow.id, recipientRole, escrow.amountXMR, reason);
+    setOverrideTxId(overrideResult.simulatedTxId);
+    addNotification(overrideResult.message, "warning");
+
+    setEscrow(prevEscrow => {
+      if (!prevEscrow) return null;
+      const updatedEscrow = { ...prevEscrow };
+
+      updatedEscrow.status = recipientRole === 'buyer' ? EscrowStatus.COMPLETED_REFUNDED : EscrowStatus.COMPLETED_RELEASED;
+      updatedEscrow.arbiterRuling = null; // Or a special 'override' ruling
+      updatedEscrow.resolutionDetails = `EMERGENCY OVERRIDE: Manually resolved in favor of ${recipientRole}. Reason: ${reason}. Simulated TXID: ${overrideResult.simulatedTxId}`;
+      updatedEscrow.lastUpdateDate = new Date().toISOString();
+
+      // Mark funding and confirmation as complete for both to close out the escrow cleanly
+      updatedEscrow.buyer.hasFunded = true;
+      updatedEscrow.buyer.hasConfirmed = true;
+      updatedEscrow.seller.hasFunded = true;
+      updatedEscrow.seller.hasConfirmed = true;
+
+      updateEscrow(updatedEscrow, `Emergency Override: Escrow "${prevEscrow.title}" resolved for ${recipientRole}.`);
+      return updatedEscrow;
+    });
+    setActionToConfirm(null); // Close any open confirmation modal
   };
 
   const filteredEvidence = useMemo(() => {
@@ -404,15 +557,86 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
             <p className="text-xs text-gray-500 mb-1">Multi-Sig Address: <span className="font-mono text-gray-400">{escrow.multiSigAddress}</span></p>
             <p className="text-xs text-gray-500 mb-6">Created: {formatDate(escrow.creationDate)} | Last Update: {formatDate(escrow.lastUpdateDate)}</p>
 
+            {/* Transaction Broadcasting Section - visible when user can fund */}
+            {userRole === 'buyer' && canFund('buyer') && !escrow.buyer.hasFunded && (
+              <div className="my-6 p-4 bg-gray-700 rounded-lg">
+                <h4 className="text-lg font-semibold text-teal-300 mb-2">Fund Escrow - Step 1: Prepare Transaction</h4>
+                <p className="text-sm text-gray-300 mb-3">
+                  To fund this escrow, you need to create and sign a Monero transaction using your wallet software for {escrow.amountXMR} XMR to the multisig address: <strong className="font-mono text-teal-400 break-all">{escrow.multiSigAddress}</strong>.
+                </p>
+                <label htmlFor="signedTxHex" className="block text-sm font-medium text-gray-300 mb-1">
+                  Step 2: Paste Signed Transaction Hex
+                </label>
+                <textarea
+                  id="signedTxHex"
+                  rows={4}
+                  className="w-full p-2 bg-gray-800 border border-gray-600 rounded-md text-sm text-gray-200 focus:ring-teal-500 focus:border-teal-500 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800"
+                  placeholder="Paste the full hexadecimal string of your signed transaction here."
+                  value={signedTxHex}
+                  onChange={(e) => setSignedTxHex(e.target.value)}
+                  disabled={isBroadcasting || escrow.buyer.hasFunded}
+                />
+
+                {isBroadcasting && (
+                  <div className="mt-3 flex items-center text-yellow-400">
+                    <Loader2 size={20} className="animate-spin mr-2" />
+                    Broadcasting transaction... Please wait.
+                  </div>
+                )}
+                {broadcastError && (
+                  <div className="mt-3 p-3 bg-red-800/50 border border-red-700 text-red-300 rounded-md text-sm">
+                    <p className="font-semibold">Broadcast Error:</p>
+                    <p>{broadcastError}</p>
+                  </div>
+                )}
+                {broadcastTxId && (
+                  <div className="mt-3 p-3 bg-green-800/50 border border-green-700 text-green-300 rounded-md text-sm">
+                    <p className="font-semibold">Broadcast Successful!</p>
+                    <p>Transaction ID (TXID): <strong className="font-mono break-all">{broadcastTxId}</strong></p>
+                    {/* TODO: Add a link to a Monero block explorer */}
+                     <a href={`https://xmrchain.net/tx/${broadcastTxId}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center text-teal-400 hover:text-teal-300 mt-1">
+                      View on XMRChain.net <ExternalLink size={14} className="ml-1"/>
+                    </a>
+                  </div>
+                )}
+              </div>
+            )}
+
             {!isTerminalState && (
                 <>
                     <h3 className="text-xl font-semibold text-gray-200 mb-3 flex items-center"><AlertTriangle size={22} className="mr-2 text-yellow-400"/>Your Actions</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mb-6">
                         {userRole === 'buyer' && canFund('buyer') && (
-                            <button onClick={() => requestActionConfirmation('fund_buyer', 'Confirm Funding', 'Are you sure you want to mark this escrow as funded from your side?', undefined, 'bg-green-600 hover:bg-green-500', 'Confirm Buyer Funding')} className="w-full bg-green-600 hover:bg-green-500 text-white font-semibold py-2 px-4 rounded-md transition-colors">Fund Escrow (as Buyer)</button>
+                            <button
+                              onClick={() => {
+                                if (!signedTxHex) {
+                                  addNotification("Please paste your signed transaction hex first.", "warning");
+                                  const txHexInput = document.getElementById('signedTxHex');
+                                  if (txHexInput) txHexInput.focus();
+                                  return;
+                                }
+                                requestActionConfirmation(
+                                  'fund_buyer',
+                                  'Confirm & Broadcast Funding',
+                                  <>
+                                    <p>You are about to broadcast the provided transaction to fund the escrow.</p>
+                                    <p className="mt-2 text-sm text-gray-400">Ensure the transaction hex is correct and targets the escrow's multisig address: <strong className="font-mono text-teal-400 break-all">{escrow.multiSigAddress}</strong> for {escrow.amountXMR} XMR.</p>
+                                    <p className="mt-2 font-semibold">This action is irreversible once the transaction is on the network.</p>
+                                  </>,
+                                  undefined,
+                                  'bg-green-600 hover:bg-green-500',
+                                  'Confirm & Broadcast'
+                                )}
+                              }
+                              className="w-full bg-green-600 hover:bg-green-500 text-white font-semibold py-2 px-4 rounded-md transition-colors disabled:opacity-50"
+                              disabled={isBroadcasting || !signedTxHex || escrow.buyer.hasFunded}
+                            >
+                              {isBroadcasting ? <Loader2 size={20} className="animate-spin mr-2 inline"/> : null}
+                              {escrow.buyer.hasFunded ? 'Funding Broadcasted' : 'Broadcast Funding Tx'}
+                            </button>
                         )}
                         {userRole === 'seller' && canFund('seller') && (
-                            <button onClick={() => requestActionConfirmation('fund_seller', 'Confirm Funding & Item', 'Are you sure you want to mark this escrow as funded and item confirmed from your side?', undefined, 'bg-green-600 hover:bg-green-500', 'Confirm Seller Funding')} className="w-full bg-green-600 hover:bg-green-500 text-white font-semibold py-2 px-4 rounded-md transition-colors">Fund Escrow (as Seller)</button>
+                            <button onClick={() => requestActionConfirmation('fund_seller', 'Confirm Funding & Item', 'Are you sure you want to mark this escrow as funded and item confirmed from your side? (This is a placeholder, seller funding broadcast not yet implemented)', undefined, 'bg-green-600 hover:bg-green-500', 'Confirm Seller Funding')} className="w-full bg-green-600 hover:bg-green-500 text-white font-semibold py-2 px-4 rounded-md transition-colors">Fund Escrow (as Seller)</button>
                         )}
                         {userRole === 'buyer' && canConfirm('buyer') && (
                             <button onClick={() => requestActionConfirmation('confirm_buyer', 'Confirm Satisfaction', 'Are you sure you are satisfied with the item/service and want to release funds to the seller?', undefined, 'bg-sky-500 hover:bg-sky-400', 'Confirm & Release')} className="w-full bg-sky-500 hover:bg-sky-400 text-white font-semibold py-2 px-4 rounded-md transition-colors">Confirm Satisfaction</button>
@@ -453,9 +677,52 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
                         {escrow.status === EscrowStatus.COMPLETED_RELEASED || escrow.status === EscrowStatus.COMPLETED_REFUNDED || escrow.status === EscrowStatus.COMPLETED_SPLIT ? <CheckCircle size={20} className="mr-2"/> : <XCircle size={20} className="mr-2"/>}
                         Escrow Resolution
                     </h3>
-                    <p className="text-gray-300">{escrow.resolutionDetails}</p>
+                    <p className="text-gray-300 whitespace-pre-wrap">{escrow.resolutionDetails}</p>
                     {escrow.arbiterRuling && <p className="text-sm text-gray-400 mt-1">Arbiter final ruling: <span className="font-semibold">{escrow.arbiterRuling}</span></p>}
+                    {overrideTxId && escrow.resolutionDetails?.includes(overrideTxId) && (
+                         <p className="text-sm text-orange-300 mt-1">Simulated Override TXID: <span className="font-mono">{overrideTxId}</span></p>
+                    )}
                 </div>
+            )}
+
+            {/* EMERGENCY OVERRIDE SECTION - ADMIN ONLY */}
+            {currentUser.username === 'admin' && !isTerminalState && (
+              <div className="mt-8 p-4 bg-red-900/70 border border-red-700 rounded-lg">
+                <h3 className="text-xl font-bold text-red-300 mb-3 flex items-center">
+                  <Zap size={22} className="mr-2" /> Emergency Override Controls (Admin)
+                </h3>
+                <p className="text-sm text-red-200 mb-4">
+                  Use these actions only in critical situations to manually resolve the escrow. This action bypasses normal fund broadcasting and simulates completion.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <button
+                    onClick={() => requestActionConfirmation(
+                      'override_to_buyer',
+                      'Confirm Override to Buyer',
+                      'You are about to override this escrow and simulate a full refund to the BUYER. This is irreversible. Are you absolutely sure?',
+                      undefined,
+                      'bg-red-600 hover:bg-red-500',
+                      'Confirm Override (Buyer)'
+                    )}
+                    className="w-full bg-red-600 hover:bg-red-500 text-white font-semibold py-2 px-4 rounded-md transition-colors"
+                  >
+                    Override to Buyer
+                  </button>
+                  <button
+                    onClick={() => requestActionConfirmation(
+                      'override_to_seller',
+                      'Confirm Override to Seller',
+                      'You are about to override this escrow and simulate a full payment to the SELLER. This is irreversible. Are you absolutely sure?',
+                      undefined,
+                      'bg-red-600 hover:bg-red-500',
+                      'Confirm Override (Seller)'
+                    )}
+                    className="w-full bg-red-600 hover:bg-red-500 text-white font-semibold py-2 px-4 rounded-md transition-colors"
+                  >
+                    Override to Seller
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         )}
