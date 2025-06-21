@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Escrow, ChatMessage, EscrowStatus, UserProfile, ArbiterRuling, DefaultOutcome, EscrowParticipant, AddNotificationHandler, BroadcastTxResponse } from '../types';
-import { formatDate, generateId, getParticipant, getOtherParticipantUsername, getDaemonRpcUrl, broadcastMoneroTransaction, initiateEmergencyOverride } from '../utils/helpers';
-import { ChevronLeft, Send, Paperclip, ShieldAlert, CheckCircle, XCircle, MessageSquare, DollarSign, Info, Clock, Users, AlertTriangle, Award, DivideSquare, TimerOff, ShieldCheck, ShieldX, HelpCircle, FileText, Filter as FilterIcon, Loader2, ExternalLink, Zap } from 'lucide-react';
+import { Escrow, ChatMessage, EscrowStatus, UserProfile, ArbiterRuling, DefaultOutcome, EscrowParticipant, AddNotificationHandler, BroadcastTxResponse, MoneroFeeEstimateResponse } from '../types';
+import { formatDate, generateId, getParticipant, getOtherParticipantUsername, getDaemonRpcUrl, broadcastMoneroTransaction, initiateEmergencyOverride, getMoneroFeeEstimate } from '../utils/helpers';
+import { ChevronLeft, Send, Paperclip, ShieldAlert, CheckCircle, XCircle, MessageSquare, DollarSign, Info, Clock, Users, AlertTriangle, Award, DivideSquare, TimerOff, ShieldCheck, ShieldX, HelpCircle, FileText, Filter as FilterIcon, Loader2, ExternalLink, Zap, TrendingUp } from 'lucide-react';
 import { ConfirmActionModal } from '../components/modals/ConfirmActionModal';
 import { EscrowTimer } from '../components/EscrowTimer'; // Added import
 
@@ -151,15 +151,84 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
   const [signedTxHex, setSignedTxHex] = useState<string>(''); // Placeholder for now
   const [overrideTxId, setOverrideTxId] = useState<string | null>(null); // For displaying simulated TXID from override
 
+  // State for fee estimation
+  const [feeEstimate, setFeeEstimate] = useState<MoneroFeeEstimateResponse | null>(null);
+  const [isFetchingFee, setIsFetchingFee] = useState(false);
+  const [feeError, setFeeError] = useState<string | null>(null);
+
   useEffect(() => {
     const foundEscrow = escrows.find(e => e.id === id);
     if (foundEscrow) {
       setEscrow(foundEscrow);
     } else {
       addNotification(`Escrow with ID ${id} not found. Redirecting to dashboard.`, 'error');
-      navigate('/dashboard'); 
+      navigate('/dashboard');
     }
   }, [id, escrows, navigate, addNotification]);
+
+
+  // Effect to fetch fee estimate when component mounts and escrow/currentUser data is available
+  useEffect(() => {
+    const fetchFee = async () => {
+      if (currentUser?.settings?.moneroNodeUrl) {
+        setIsFetchingFee(true);
+        setFeeError(null);
+        try {
+          const daemonRpcUrl = getDaemonRpcUrl(currentUser.settings.moneroNodeUrl);
+          // We can specify grace_blocks, e.g., 10, for a reasonable estimate window
+          // Or leave it undefined for daemon default. Let's use a small default for now.
+          const estimate = await getMoneroFeeEstimate(daemonRpcUrl, 10);
+          setFeeEstimate(estimate);
+          console.log("Fee estimate fetched:", estimate);
+        } catch (error: any) {
+          console.error("Failed to fetch fee estimate:", error);
+          setFeeError(error.message || "Could not fetch fee information.");
+          addNotification(`Could not fetch Monero fee information: ${error.message}`, "error");
+        } finally {
+          setIsFetchingFee(false);
+        }
+      } else {
+        setFeeError("Monero node URL not configured. Cannot fetch fee estimate.");
+        // Optionally notify, or just let the UI show this error.
+        // addNotification("Monero node URL not configured. Cannot fetch fee estimate.", "warning");
+      }
+    };
+
+    // Only fetch if the user is a buyer and needs to fund, and escrow data is loaded
+    if (escrow && userRole === 'buyer' && canFund('buyer') && !escrow.buyer.hasFunded) {
+        fetchFee();
+    }
+    // Dependencies: Re-fetch if user or escrow changes in a way that affects this.
+    // Note: userRole and canFund depend on escrow and currentUser, so they are implicitly covered.
+  }, [escrow, currentUser, addNotification]); // Removed userRole and canFund to avoid re-triggering if they are memoized differently
+  // Added a separate useEffect that depends on userRole and canFund to trigger fetchFee if those become true later.
+  // This might be overly complex; simpler might be to fetch always if node URL exists and let UI hide it.
+  // For now, keeping it tied to the funding section visibility.
+
+  const userRole = useMemo(() => escrow ? getParticipant(escrow, currentUser.id) : 'observer', [escrow, currentUser.id]);
+  const isBuyerFunding = useMemo(() => escrow && userRole === 'buyer' && !escrow.buyer.hasFunded && (escrow.status === EscrowStatus.PENDING_FUNDING || escrow.status === EscrowStatus.SELLER_CONFIRMED_ITEM), [escrow, userRole]);
+
+  useEffect(() => {
+    const fetchFeeIfNeeded = async () => {
+      if (isBuyerFunding && currentUser?.settings?.moneroNodeUrl && !feeEstimate && !isFetchingFee && !feeError) {
+        setIsFetchingFee(true);
+        setFeeError(null);
+        try {
+          const daemonRpcUrl = getDaemonRpcUrl(currentUser.settings.moneroNodeUrl);
+          const estimate = await getMoneroFeeEstimate(daemonRpcUrl, 10);
+          setFeeEstimate(estimate);
+        } catch (error: any) {
+          setFeeError(error.message || "Could not fetch fee information.");
+          addNotification(`Could not fetch Monero fee information: ${error.message}`, "error");
+        } finally {
+          setIsFetchingFee(false);
+        }
+      } else if (isBuyerFunding && !currentUser?.settings?.moneroNodeUrl && !feeError) {
+         setFeeError("Monero node URL not configured. Cannot fetch fee estimate.");
+      }
+    };
+    fetchFeeIfNeeded();
+  }, [isBuyerFunding, currentUser?.settings?.moneroNodeUrl, feeEstimate, isFetchingFee, feeError, addNotification]);
 
   const handleSendMessage = useCallback((messageText: string) => {
     if (!escrow) return;
@@ -561,9 +630,35 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
             {userRole === 'buyer' && canFund('buyer') && !escrow.buyer.hasFunded && (
               <div className="my-6 p-4 bg-gray-700 rounded-lg">
                 <h4 className="text-lg font-semibold text-teal-300 mb-2">Fund Escrow - Step 1: Prepare Transaction</h4>
-                <p className="text-sm text-gray-300 mb-3">
-                  To fund this escrow, you need to create and sign a Monero transaction using your wallet software for {escrow.amountXMR} XMR to the multisig address: <strong className="font-mono text-teal-400 break-all">{escrow.multiSigAddress}</strong>.
-                </p>
+                <div className="mb-4 p-3 bg-gray-600/50 rounded-md">
+                  <p className="text-sm text-gray-300 mb-1">
+                    To fund this escrow, create and sign a Monero transaction using your wallet software:
+                  </p>
+                  <ul className="list-disc list-inside text-sm text-gray-400 space-y-1">
+                    <li>Amount: <strong className="text-teal-300">{escrow.amountXMR} XMR</strong></li>
+                    <li>Destination Address: <strong className="font-mono text-teal-400 break-all">{escrow.multiSigAddress}</strong></li>
+                  </ul>
+                  {isFetchingFee && (
+                    <div className="mt-2 flex items-center text-xs text-yellow-400">
+                      <Loader2 size={14} className="animate-spin mr-1" /> Fetching current network fee estimate...
+                    </div>
+                  )}
+                  {feeError && (
+                    <div className="mt-2 text-xs text-red-400">
+                      <AlertTriangle size={14} className="inline mr-1" /> Error fetching fee: {feeError}
+                    </div>
+                  )}
+                  {feeEstimate && feeEstimate.fee && (
+                    <div className="mt-2 text-xs text-gray-400">
+                      <TrendingUp size={14} className="inline mr-1 text-teal-400" />
+                      Estimated network fee: <strong className="text-teal-300">{(feeEstimate.fee / 1_000_000_000_000).toLocaleString(undefined, {minimumFractionDigits: 5, maximumFractionDigits: 12})} XMR per kB</strong> (approx. for a typical transaction).
+                      Ensure your wallet uses a recent fee rate. Default/medium priority is usually fine.
+                      <p className="text-xs text-gray-500 mt-1">
+                        (Raw fee: {feeEstimate.fee} piconeros/byte. Priorities: {feeEstimate.fees ? feeEstimate.fees.join('/') : 'N/A'})
+                      </p>
+                    </div>
+                  )}
+                </div>
                 <label htmlFor="signedTxHex" className="block text-sm font-medium text-gray-300 mb-1">
                   Step 2: Paste Signed Transaction Hex
                 </label>
