@@ -176,3 +176,27 @@ export interface BroadcastTxResponse {
   top_hash?: string; // Hash of the highest block known to the daemon
   untrusted?: boolean; // If the daemon is not fully synced or in a bad state
 }
+
+/**
+ * Represents the response from the Monero daemon's `get_fee_estimate` RPC method.
+ * This is typically nested under a `result` field in the full JSON-RPC response.
+ */
+export interface MoneroFeeEstimateResponse {
+  status: string; // "OK" or error status.
+  fee: number; // Estimated fee per byte in piconeros.
+  fees?: number[]; // Estimated fees per byte for different priority levels (slow, normal, fast, fastest). Array indices correspond to priorities.
+  quantization_mask: number; // Fee quantization mask. Fees should be a multiple of this value.
+  fee_mask?: number; // Alias for quantization_mask (older daemons).
+  priority_mask?: number; // Mask for priorities available.
+  slow_fee?: number; // Fee for "slow" priority (older daemons, may not be present)
+  fast_fee?: number; // Fee for "fast" priority (older daemons, may not be present)
+  normal_fee?: number; // Fee for "normal" priority (older daemons, may not be present)
+  error?: { // Only present if the overall JSON-RPC call had an error, not for "status: Failed" type issues within the result.
+    code: number;
+    message: string;
+  };
+  // Additional fields that might be present
+  credits?: number;
+  top_hash?: string;
+  untrusted?: boolean;
+}

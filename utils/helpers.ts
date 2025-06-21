@@ -1,5 +1,5 @@
 
-import { Escrow, UserProfile, GetTransfersParams, MoneroGetTransfersResponse, MoneroTransaction, BroadcastTxResponse } from '../types';
+import { Escrow, UserProfile, GetTransfersParams, MoneroGetTransfersResponse, MoneroTransaction, BroadcastTxResponse, MoneroFeeEstimateResponse } from '../types';
 
 // Basic ID generator (replace with a robust library like UUID in a real app)
 export const generateId = (): string => {
@@ -368,4 +368,69 @@ export const initiateEmergencyOverride = (
     amountXMR: amountXMR,
     reason: overrideReason,
   };
+};
+
+/**
+ * Fetches fee estimation from a Monero daemon.
+ * @param daemonRpcUrl - The URL of the Monero daemon RPC server (e.g., http://127.0.0.1:18081/json_rpc).
+ * @param grace_blocks - Optional. Number of blocks to look back for fee estimation.
+ * @returns A promise that resolves with the fee estimation response.
+ */
+export const getMoneroFeeEstimate = async (
+  daemonRpcUrl: string,
+  grace_blocks?: number
+): Promise<MoneroFeeEstimateResponse> => {
+  // Ensure the endpoint is /json_rpc
+  const endpoint = daemonRpcUrl.endsWith('/json_rpc')
+    ? daemonRpcUrl
+    : daemonRpcUrl.replace(/\/$/, '') + '/json_rpc'; // Append /json_rpc if not present, remove trailing slash first
+
+  console.log(`Fetching fee estimate from: ${endpoint}`);
+
+  try {
+    const requestBody: { jsonrpc: string; id: string; method: string; params?: any } = {
+      jsonrpc: '2.0',
+      id: '0',
+      method: 'get_fee_estimate',
+    };
+
+    if (typeof grace_blocks === 'number') {
+      requestBody.params = { grace_blocks };
+    }
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error('Fee estimate failed - Network error:', response.status, errorBody);
+      throw new Error(`Failed to fetch fee estimate: ${response.status} ${response.statusText}. Body: ${errorBody}`);
+    }
+
+    const data = await response.json();
+    console.log('Fee estimate response data:', data);
+
+    if (data.error) {
+      console.error('Fee estimate failed - Daemon error:', data.error.message);
+      throw new Error(`Failed to fetch fee estimate: ${data.error.message} (Code: ${data.error.code})`);
+    }
+
+    // The actual fee estimate data is in data.result
+    // Structure: { fee: number, fees: number[], quantization_mask: number, status: string, ... }
+    if (!data.result || data.result.status !== "OK") {
+        const reason = data.result ? data.result.status : "Unknown reason; result missing or status not OK.";
+        console.error('Fee estimate unsuccessful:', reason, data.result);
+        throw new Error(`Fee estimation was not successful: ${reason}`);
+    }
+
+    return data.result as MoneroFeeEstimateResponse;
+  } catch (error) {
+    console.error('Error fetching Monero fee estimate:', error);
+    throw error; // Re-throw to be caught by caller
+  }
 };
