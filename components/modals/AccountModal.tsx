@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { UserProfile, UserSettings, AddNotificationHandler, MoneroTransaction, GetTransfersParams } from '../../types';
 import { X, UserCircle, Key, Zap, ShieldCheck, Save, AlertTriangle, FileText, Lock, CheckSquare, RotateCcw, RefreshCw, Wallet, Server, Network, Activity, Unlock, List, ListFilter, ArrowDownUp, Shield, Scan } from 'lucide-react'; // Added Shield, Scan

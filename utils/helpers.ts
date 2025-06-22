@@ -1,4 +1,3 @@
-
 import { Escrow, UserProfile, GetTransfersParams, MoneroGetTransfersResponse, MoneroTransaction, BroadcastTxResponse, MoneroFeeEstimateResponse } from '../types';
 
 // Basic ID generator (replace with a robust library like UUID in a real app)
@@ -111,8 +110,8 @@ export const decryptMnemonic = async (encryptedData: string, password: string): 
     const parts = encryptedData.split(':');
     if (parts.length !== 3) throw new Error("Invalid encrypted data format. Expected salt:iv:ciphertext.");
 
-    const salt = new Uint8Array(base64ToBuffer(parts[0])); // Converted to Uint8Array
-    const iv = new Uint8Array(base64ToBuffer(parts[1])); // Converted to Uint8Array for consistency, though ArrayBuffer is also BufferSource
+    const salt = new Uint8Array(base64ToBuffer(parts[0]));
+    const iv = new Uint8Array(base64ToBuffer(parts[1]));
     const ciphertext = base64ToBuffer(parts[2]);
 
     const key = await getPasswordKey(password, salt);
@@ -126,7 +125,6 @@ export const decryptMnemonic = async (encryptedData: string, password: string): 
     return dec.decode(decryptedBuffer);
   } catch (error) {
     console.error("Decryption process failed:", error);
-    // Provide a user-friendly error. Avoid exposing too much detail about the crypto error.
     throw new Error("Decryption failed. This could be due to an incorrect password or corrupted data.");
   }
 };
@@ -138,20 +136,18 @@ export const getWalletTransfers = async (
   params: GetTransfersParams
 ): Promise<MoneroGetTransfersResponse> => {
   console.log("Initiating get_transfers call to:", rpcUrl, "with params:", params);
-  // Simulate network delay
   await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 700));
 
-  // Generate some transactions
   const nowSeconds = Math.floor(Date.now() / 1000);
   const generatedTransactions: MoneroTransaction[] = [
     {
       txid: "tx_in_" + generateId().slice(0,8),
       type: "in",
-      amount: 2500000000000, // 2.5 XMR (piconeros)
+      amount: 2500000000000,
       fee: 0,
-      timestamp: nowSeconds - (86400 * 3), // 3 days ago
+      timestamp: nowSeconds - (86400 * 3),
       height: 2800000,
-      confirmations: 3 * 720, // approx 3 days of blocks
+      confirmations: 3 * 720,
       note: "Payment for design work",
       payment_id: "abcdef1234567890",
       destinations: [{ address: "your_address_main_in", amount: 2500000000000 }],
@@ -159,10 +155,10 @@ export const getWalletTransfers = async (
     {
       txid: "tx_out_" + generateId().slice(0,8),
       type: "out",
-      amount: 1200000000000, // 1.2 XMR
-      fee: 6000000000, // 0.006 XMR
-      timestamp: nowSeconds - (86400 * 1), // 1 day ago
-      height: 2800000 + (2 * 720), // approx 2 days of blocks later
+      amount: 1200000000000,
+      fee: 6000000000,
+      timestamp: nowSeconds - (86400 * 1),
+      height: 2800000 + (2 * 720),
       confirmations: 1 * 720,
       note: "Software license",
       destinations: [{ address: "vendor_address_xyz", amount: 1200000000000 }],
@@ -170,10 +166,10 @@ export const getWalletTransfers = async (
     {
       txid: "tx_pending_out_" + generateId().slice(0,8),
       type: "pending",
-      amount: 500000000000, // 0.5 XMR
+      amount: 500000000000,
       fee: 3000000000,
-      timestamp: nowSeconds - 3600, // 1 hour ago
-      height: 0, // Not confirmed
+      timestamp: nowSeconds - 3600,
+      height: 0,
       confirmations: 0,
       note: "Pending service payment",
       destinations: [{ address: "service_provider_abc", amount: 500000000000 }],
@@ -181,9 +177,9 @@ export const getWalletTransfers = async (
     {
       txid: "tx_pending_in_" + generateId().slice(0,8),
       type: "pending",
-      amount: 750000000000, // 0.75 XMR
+      amount: 750000000000,
       fee: 0, 
-      timestamp: nowSeconds - 1800, // 30 minutes ago
+      timestamp: nowSeconds - 1800,
       height: 0,
       confirmations: 0,
       note: "Incoming payment, unconfirmed",
@@ -192,10 +188,10 @@ export const getWalletTransfers = async (
     {
       txid: "tx_pool_" + generateId().slice(0,8),
       type: "pool",
-      amount: 100000000000, // 0.1 XMR
+      amount: 100000000000,
       fee: 1000000000,
-      timestamp: nowSeconds - 600, // 10 minutes ago
-      height: 0, // In pool
+      timestamp: nowSeconds - 600,
+      height: 0,
       confirmations: 0,
       note: "Incoming from tx pool",
     },
@@ -224,56 +220,28 @@ export const getWalletTransfers = async (
 
 // Monero Daemon RPC Helpers
 
-/**
- * Derives a Monero daemon RPC URL from a wallet RPC URL.
- * Assumes standard Monero ports (18081 for mainnet wallet, 18089 for testnet wallet, etc.)
- * and that daemon is running on the same host.
- * This is a common convention but might need adjustment for specific setups.
- * @param walletRpcUrl - The URL of the Monero wallet RPC server.
- * @returns The derived URL for the Monero daemon RPC server.
- */
 export const getDaemonRpcUrl = (walletRpcUrl: string): string => {
   try {
     const url = new URL(walletRpcUrl);
-    // Common default ports:
-    // Mainnet: Wallet 18081/18082, Daemon 18081 (but often separate or via 18089 for restricted)
-    // Testnet: Wallet 28081/28082, Daemon 28081 (or 28089)
-    // Stagenet: Wallet 38081/38082, Daemon 38081 (or 38089)
-
-    // A common scenario is wallet RPC on 18082 and daemon on 18081 or 18089 (restricted)
-    // This function makes a basic assumption. For more robust derivation,
-    // it might require configuration or knowledge of the specific network (mainnet/testnet).
-    // For now, let's assume daemon is on a port commonly associated with public daemon access,
-    // or the main daemon port if wallet is on a higher number.
-
+    
     let daemonPort = '18081'; // Default mainnet daemon
-    if (url.port === '18082' || url.port === '18083') { // Mainnet wallet (e.g. monero-wallet-rpc)
-      daemonPort = '18081'; // Or 18089 for restricted public access
-    } else if (url.port === '28082' || url.port === '28083') { // Testnet wallet
+    if (url.port === '18082' || url.port === '18083') {
+      daemonPort = '18081';
+    } else if (url.port === '28082' || url.port === '28083') {
       daemonPort = '28081';
-    } else if (url.port === '38082' || url.port === '38083') { // Stagenet wallet
+    } else if (url.port === '38082' || url.port === '38083') {
       daemonPort = '38081';
-    } else if (url.port === '18081') { // If wallet is already on daemon port, assume same for daemon.
+    } else if (url.port === '18081') {
       daemonPort = '18081';
     }
-    // If walletRpcUrl doesn't include a common wallet port, this might not be correct.
-    // A more advanced version could check hostname patterns or allow explicit daemon URL.
 
     return `${url.protocol}//${url.hostname}:${daemonPort}/json_rpc`;
   } catch (error) {
     console.error("Error parsing wallet RPC URL:", error);
-    // Fallback or throw error, depending on desired strictness
-    // For now, returning a common default if parsing fails, though this is risky.
     return 'http://127.0.0.1:18081/json_rpc';
   }
 };
 
-/**
- * Broadcasts a raw Monero transaction hex to a Monero daemon.
- * @param daemonRpcUrl - The URL of the Monero daemon RPC server (e.g., http://127.0.0.1:18081/json_rpc).
- * @param tx_as_hex - The raw transaction hex string.
- * @returns A promise that resolves with the broadcast response.
- */
 export const broadcastMoneroTransaction = async (
   daemonRpcUrl: string,
   tx_as_hex: string
@@ -292,7 +260,7 @@ export const broadcastMoneroTransaction = async (
       },
       body: JSON.stringify({
         tx_as_hex: tx_as_hex,
-        do_not_relay: false, // Set to true if you only want to check validity without relaying
+        do_not_relay: false,
       }),
     });
 
@@ -305,45 +273,23 @@ export const broadcastMoneroTransaction = async (
     const data = await response.json();
     console.log('Broadcast response data:', data);
 
-    // The structure of a successful response can vary. A common one includes:
-    // { "status": "OK", "tx_hash": "...", "double_spend": false, ... }
-    // Or it might just be the status and other fields.
-    // An error response might be:
-    // { "status": "Failed", "reason": "...", ... }
     if (data.status === 'Failed' || (data.error && data.error.message)) {
         const reason = data.reason || (data.error ? data.error.message : 'Unknown reason');
         console.error('Broadcast failed - Daemon error:', reason);
         throw new Error(`Transaction broadcast rejected by daemon: ${reason}`);
     }
 
-    // Assuming success if no explicit failure and status is OK or not "Failed"
-    // A more robust check might be needed based on actual daemon responses.
     if (data.status && data.status !== "OK") {
         console.warn("Broadcast status not OK:", data.status, data);
-        // Potentially throw an error here if non-OK status always means failure
     }
 
-    return data; // This will be of type BroadcastTxResponse
+    return data;
   } catch (error) {
     console.error('Error broadcasting Monero transaction:', error);
-    // Re-throw the error so it can be caught by the caller
-    // Or return a structured error object
     throw error;
   }
 };
 
-/**
- * Simulates an emergency override for an escrow transaction.
- * This function DOES NOT interact with the Monero network.
- * It's intended for administrative purposes to manually resolve an escrow
- * by marking it as complete in favor of a specified recipient.
- *
- * @param escrowId - The ID of the escrow being overridden.
- * @param recipientRole - Who the override is "paying" ('buyer' or 'seller').
- * @param amountXMR - The amount of XMR to be "sent".
- * @param overrideReason - The reason for this emergency action.
- * @returns An object indicating the override was processed, with a simulated TXID.
- */
 export const initiateEmergencyOverride = (
   escrowId: string,
   recipientRole: 'buyer' | 'seller',
@@ -357,9 +303,6 @@ export const initiateEmergencyOverride = (
 
   console.warn(`EMERGENCY OVERRIDE: ${message}`);
 
-  // In a real application, this event should be securely logged for audit.
-  // E.g., send to a secure logging service or admin dashboard.
-
   return {
     status: "OVERRIDE_SUCCESSFUL",
     simulatedTxId: simulatedTxId,
@@ -370,20 +313,13 @@ export const initiateEmergencyOverride = (
   };
 };
 
-/**
- * Fetches fee estimation from a Monero daemon.
- * @param daemonRpcUrl - The URL of the Monero daemon RPC server (e.g., http://127.0.0.1:18081/json_rpc).
- * @param grace_blocks - Optional. Number of blocks to look back for fee estimation.
- * @returns A promise that resolves with the fee estimation response.
- */
 export const getMoneroFeeEstimate = async (
   daemonRpcUrl: string,
   grace_blocks?: number
 ): Promise<MoneroFeeEstimateResponse> => {
-  // Ensure the endpoint is /json_rpc
   const endpoint = daemonRpcUrl.endsWith('/json_rpc')
     ? daemonRpcUrl
-    : daemonRpcUrl.replace(/\/$/, '') + '/json_rpc'; // Append /json_rpc if not present, remove trailing slash first
+    : daemonRpcUrl.replace(/\/$/, '') + '/json_rpc';
 
   console.log(`Fetching fee estimate from: ${endpoint}`);
 
@@ -419,9 +355,7 @@ export const getMoneroFeeEstimate = async (
       console.error('Fee estimate failed - Daemon error:', data.error.message);
       throw new Error(`Failed to fetch fee estimate: ${data.error.message} (Code: ${data.error.code})`);
     }
-
-    // The actual fee estimate data is in data.result
-    // Structure: { fee: number, fees: number[], quantization_mask: number, status: string, ... }
+    
     if (!data.result || data.result.status !== "OK") {
         const reason = data.result ? data.result.status : "Unknown reason; result missing or status not OK.";
         console.error('Fee estimate unsuccessful:', reason, data.result);
@@ -431,6 +365,6 @@ export const getMoneroFeeEstimate = async (
     return data.result as MoneroFeeEstimateResponse;
   } catch (error) {
     console.error('Error fetching Monero fee estimate:', error);
-    throw error; // Re-throw to be caught by caller
+    throw error;
   }
 };

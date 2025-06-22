@@ -1,4 +1,3 @@
-
 export enum EscrowStatus {
   PENDING_FUNDING = 'Pending Funding',
   BUYER_FUNDED = 'Buyer Funded', 
@@ -6,7 +5,7 @@ export enum EscrowStatus {
   AWAITING_PARTICIPANT_ACTION = 'Awaiting Participant Action',
   ACTIVE = 'Active / Funded', 
   DISPUTE_INITIATED = 'Dispute Initiated',
-  EVIDENCE_SUBMISSION = 'Evidence Submission Phase', // Kept for potential future granularity
+  EVIDENCE_SUBMISSION = 'Evidence Submission Phase',
   ARBITER_REVIEW = 'Arbiter Review',
   RESOLUTION_REACHED = 'Resolution Reached', 
   COMPLETED_RELEASED = 'Completed - Funds Released',
@@ -80,7 +79,6 @@ export interface UserProfile {
 }
 
 // Defines the shape of the object used to create a new escrow.
-// Omits fields that are auto-generated or derived during creation.
 export type AddEscrowInput = Omit<Escrow, 'id' | 'creationDate' | 'lastUpdateDate' | 'status' | 'chatLog' | 'arbiterInvolved' | 'arbiterId' | 'multiSigAddress' | 'buyer' | 'seller' | 'arbiterRuling'> & {
   buyerId: string;
   sellerId: string;
@@ -124,8 +122,6 @@ export interface MoneroTransaction {
   payment_id?: string;
   note?: string; // User-provided note
   destinations?: MoneroTransactionDestination[]; // For 'out' or 'pending' 'out'
-  // Other fields from get_transfers response can be added as needed
-  // e.g., address, subaddr_index, double_spend_seen, unlock_time etc.
 }
 
 export interface GetTransfersParams {
@@ -137,7 +133,6 @@ export interface GetTransfersParams {
   account_index?: number; // Defaults to 0 (primary account)
   filter_by_height?: boolean;
   min_height?: number;
-  // subaddr_indices?: number[]; // For specific subaddresses
 }
 
 export interface MoneroGetTransfersResponse {
@@ -146,7 +141,6 @@ export interface MoneroGetTransfersResponse {
   pool?: MoneroTransaction[];
   pending?: MoneroTransaction[];
   failed?: MoneroTransaction[];
-  // Other fields like "denied" or "unconfirmed_out" can be added if needed
 }
 
 /**
@@ -171,10 +165,9 @@ export interface BroadcastTxResponse {
     code: number;
     message: string;
   };
-  // The following are less common directly in send_raw_transaction but good to be aware of
-  credits?: number; // Cost of the RPC call (if applicable)
-  top_hash?: string; // Hash of the highest block known to the daemon
-  untrusted?: boolean; // If the daemon is not fully synced or in a bad state
+  credits?: number;
+  top_hash?: string;
+  untrusted?: boolean;
 }
 
 /**
@@ -191,11 +184,10 @@ export interface MoneroFeeEstimateResponse {
   slow_fee?: number; // Fee for "slow" priority (older daemons, may not be present)
   fast_fee?: number; // Fee for "fast" priority (older daemons, may not be present)
   normal_fee?: number; // Fee for "normal" priority (older daemons, may not be present)
-  error?: { // Only present if the overall JSON-RPC call had an error, not for "status: Failed" type issues within the result.
+  error?: {
     code: number;
     message: string;
   };
-  // Additional fields that might be present
   credits?: number;
   top_hash?: string;
   untrusted?: boolean;

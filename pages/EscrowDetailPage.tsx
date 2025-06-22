@@ -1,11 +1,10 @@
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Escrow, ChatMessage, EscrowStatus, UserProfile, ArbiterRuling, DefaultOutcome, EscrowParticipant, AddNotificationHandler, BroadcastTxResponse, MoneroFeeEstimateResponse } from '../types';
 import { formatDate, generateId, getParticipant, getOtherParticipantUsername, getDaemonRpcUrl, broadcastMoneroTransaction, initiateEmergencyOverride, getMoneroFeeEstimate } from '../utils/helpers';
 import { ChevronLeft, Send, Paperclip, ShieldAlert, CheckCircle, XCircle, MessageSquare, DollarSign, Info, Clock, Users, AlertTriangle, Award, DivideSquare, TimerOff, ShieldCheck, ShieldX, HelpCircle, FileText, Filter as FilterIcon, Loader2, ExternalLink, Zap, TrendingUp } from 'lucide-react';
 import { ConfirmActionModal } from '../components/modals/ConfirmActionModal';
-import { EscrowTimer } from '../components/EscrowTimer'; // Added import
+import { EscrowTimer } from '../components/EscrowTimer';
 
 interface EscrowDetailPageProps {
   escrows: Escrow[];
@@ -147,9 +146,8 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
   const [isBroadcasting, setIsBroadcasting] = useState(false);
   const [broadcastTxId, setBroadcastTxId] = useState<string | null>(null);
   const [broadcastError, setBroadcastError] = useState<string | null>(null);
-  // State for the signed transaction hex (to be provided by user or wallet integration later)
-  const [signedTxHex, setSignedTxHex] = useState<string>(''); // Placeholder for now
-  const [overrideTxId, setOverrideTxId] = useState<string | null>(null); // For displaying simulated TXID from override
+  const [signedTxHex, setSignedTxHex] = useState<string>('');
+  const [overrideTxId, setOverrideTxId] = useState<string | null>(null);
 
   // State for fee estimation
   const [feeEstimate, setFeeEstimate] = useState<MoneroFeeEstimateResponse | null>(null);
@@ -165,46 +163,7 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
       navigate('/dashboard');
     }
   }, [id, escrows, navigate, addNotification]);
-
-
-  // Effect to fetch fee estimate when component mounts and escrow/currentUser data is available
-  useEffect(() => {
-    const fetchFee = async () => {
-      if (currentUser?.settings?.moneroNodeUrl) {
-        setIsFetchingFee(true);
-        setFeeError(null);
-        try {
-          const daemonRpcUrl = getDaemonRpcUrl(currentUser.settings.moneroNodeUrl);
-          // We can specify grace_blocks, e.g., 10, for a reasonable estimate window
-          // Or leave it undefined for daemon default. Let's use a small default for now.
-          const estimate = await getMoneroFeeEstimate(daemonRpcUrl, 10);
-          setFeeEstimate(estimate);
-          console.log("Fee estimate fetched:", estimate);
-        } catch (error: any) {
-          console.error("Failed to fetch fee estimate:", error);
-          setFeeError(error.message || "Could not fetch fee information.");
-          addNotification(`Could not fetch Monero fee information: ${error.message}`, "error");
-        } finally {
-          setIsFetchingFee(false);
-        }
-      } else {
-        setFeeError("Monero node URL not configured. Cannot fetch fee estimate.");
-        // Optionally notify, or just let the UI show this error.
-        // addNotification("Monero node URL not configured. Cannot fetch fee estimate.", "warning");
-      }
-    };
-
-    // Only fetch if the user is a buyer and needs to fund, and escrow data is loaded
-    if (escrow && userRole === 'buyer' && canFund('buyer') && !escrow.buyer.hasFunded) {
-        fetchFee();
-    }
-    // Dependencies: Re-fetch if user or escrow changes in a way that affects this.
-    // Note: userRole and canFund depend on escrow and currentUser, so they are implicitly covered.
-  }, [escrow, currentUser, addNotification]); // Removed userRole and canFund to avoid re-triggering if they are memoized differently
-  // Added a separate useEffect that depends on userRole and canFund to trigger fetchFee if those become true later.
-  // This might be overly complex; simpler might be to fetch always if node URL exists and let UI hide it.
-  // For now, keeping it tied to the funding section visibility.
-
+  
   const userRole = useMemo(() => escrow ? getParticipant(escrow, currentUser.id) : 'observer', [escrow, currentUser.id]);
   const isBuyerFunding = useMemo(() => escrow && userRole === 'buyer' && !escrow.buyer.hasFunded && (escrow.status === EscrowStatus.PENDING_FUNDING || escrow.status === EscrowStatus.SELLER_CONFIRMED_ITEM), [escrow, userRole]);
 
@@ -266,38 +225,15 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
   const handleAction = (actionType: string, data?: any) => {
     if (!escrow) return;
 
-    // For funding actions, we will now trigger the broadcast flow.
-    // The actual state update (hasFunded = true) will happen after successful broadcast.
     if (actionType === 'fund_buyer') {
-        // In a real scenario, the signed TX hex would be obtained after user confirms funding details
-        // and signs the transaction with their wallet.
-        // For now, we'll use a placeholder and expect it to be in `signedTxHex` state.
-        // We'll also open a modal or section for the user to paste it.
-        // For this step, let's assume `signedTxHex` is ready for broadcast.
-
-        // TODO: Replace this with actual signed TX hex when available
-        const placeholderTxHex = "PASTE_SIGNED_TRANSACTION_HEX_HERE";
-        if (!signedTxHex && actionType === 'fund_buyer') {
-             addNotification("Please provide the signed transaction hex to broadcast.", "warning");
-             // We might want to show a modal here to input the hex
-             // For now, just preventing action if hex is missing.
-             // Let's set a dummy one for now to proceed with broadcast logic for testing.
-             if (!signedTxHex) {
-                console.warn("Using dummy transaction hex for broadcasting.");
-                // setSignedTxHex("dummy_tx_hex_for_testing_needs_to_be_long_enough_for_monero_tx_hex_usually_very_long_string_of_hex_characters_abcdef1234567890...");
-             }
-             // return; // Uncomment this if strict about requiring user input first
-        }
-
-        handleBroadcastTransaction(actionType === 'fund_buyer' ? 'buyer' : 'seller');
-        setActionToConfirm(null); // Close confirmation modal if it was open
-        return; // We don't want to proceed with the old logic for this action
+        handleBroadcastTransaction('buyer');
+        setActionToConfirm(null); 
+        return;
     }
 
     let updatedEscrow = { ...escrow };
     let notificationMessage = '';
 
-    // Handle emergency overrides first
     if (actionType === 'override_to_buyer') {
       handleEmergencyOverride('buyer');
       return;
@@ -308,8 +244,6 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
     }
 
     switch (actionType) {
-      // fund_buyer is now handled by handleBroadcastTransaction
-      // fund_seller might also involve broadcasting in a real system. For now, manual update.
       case 'fund_seller':
         updatedEscrow.seller.hasFunded = true;
         updatedEscrow.seller.hasConfirmed = true; 
@@ -401,9 +335,6 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
     setBroadcastTxId(null);
 
     try {
-      // Assume moneroNodeUrl is the WALLET RPC URL, derive daemon URL from it.
-      // If moneroNodeUrl is already a DAEMON RPC URL, getDaemonRpcUrl might need adjustment
-      // or we could have separate settings for wallet and daemon URLs.
       const daemonRpcUrl = getDaemonRpcUrl(currentUser.settings.moneroNodeUrl);
       addNotification(`Attempting to broadcast to daemon at ${daemonRpcUrl}...`, "info");
 
@@ -413,7 +344,6 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
         setBroadcastTxId(response.tx_hash);
         addNotification(`Transaction broadcasted successfully! TXID: ${response.tx_hash}`, "success");
 
-        // Now update the escrow state
         setEscrow(prevEscrow => {
           if (!prevEscrow) return null;
           const updatedEscrow = { ...prevEscrow };
@@ -424,8 +354,7 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
             notificationMessage = `Buyer successfully funded escrow: "${prevEscrow.title}" (TXID: ${response.tx_hash})`;
             if (updatedEscrow.seller.hasFunded) updatedEscrow.status = EscrowStatus.ACTIVE;
             else updatedEscrow.status = EscrowStatus.BUYER_FUNDED;
-          } else { // fundingParty === 'seller'
-            // Note: Seller funding also confirming item in current logic. If broadcast is separate, this might change.
+          } else { 
             updatedEscrow.seller.hasFunded = true;
             updatedEscrow.seller.hasConfirmed = true;
             notificationMessage = `Seller successfully funded & confirmed for escrow: "${prevEscrow.title}" (TXID: ${response.tx_hash})`;
@@ -448,18 +377,11 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
       addNotification(`Broadcast error: ${errorMessage}`, "error");
     } finally {
       setIsBroadcasting(false);
-      // setSignedTxHex(''); // Clear the hex after attempting broadcast
     }
   };
 
   const requestActionConfirmation = (type: string, title: string, message: string | React.ReactNode, data?:any, confirmButtonClass?: string, confirmButtonText?: string) => {
-    // If the action is to fund, and we don't have the signedTxHex yet,
-    // we might want to show a different modal or an input field first.
-    // For now, the confirmation modal will trigger handleAction, which then calls handleBroadcast.
     if (type === 'fund_buyer' && !signedTxHex) {
-        // TODO: Implement a modal to input signedTxHex if it's empty.
-        // For now, we're proceeding and it will use a dummy or show an error.
-        // This is now handled by the button's onClick directly.
     }
     setActionToConfirm({ type, title, message, data, confirmButtonClass, confirmButtonText });
   };
@@ -482,11 +404,10 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
       const updatedEscrow = { ...prevEscrow };
 
       updatedEscrow.status = recipientRole === 'buyer' ? EscrowStatus.COMPLETED_REFUNDED : EscrowStatus.COMPLETED_RELEASED;
-      updatedEscrow.arbiterRuling = null; // Or a special 'override' ruling
+      updatedEscrow.arbiterRuling = null;
       updatedEscrow.resolutionDetails = `EMERGENCY OVERRIDE: Manually resolved in favor of ${recipientRole}. Reason: ${reason}. Simulated TXID: ${overrideResult.simulatedTxId}`;
       updatedEscrow.lastUpdateDate = new Date().toISOString();
 
-      // Mark funding and confirmation as complete for both to close out the escrow cleanly
       updatedEscrow.buyer.hasFunded = true;
       updatedEscrow.buyer.hasConfirmed = true;
       updatedEscrow.seller.hasFunded = true;
@@ -495,7 +416,7 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
       updateEscrow(updatedEscrow, `Emergency Override: Escrow "${prevEscrow.title}" resolved for ${recipientRole}.`);
       return updatedEscrow;
     });
-    setActionToConfirm(null); // Close any open confirmation modal
+    setActionToConfirm(null);
   };
 
   const filteredEvidence = useMemo(() => {
@@ -521,8 +442,6 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
       </div>
     );
   }
-
-  const userRole = getParticipant(escrow, currentUser.id);
 
   const canFund = (role: 'buyer' | 'seller') => {
     if (role === 'buyer') return !escrow.buyer.hasFunded && (escrow.status === EscrowStatus.PENDING_FUNDING || escrow.status === EscrowStatus.SELLER_CONFIRMED_ITEM);
@@ -585,17 +504,15 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
             </span>
             </div>
             <p className="text-gray-400 mb-4 text-sm">{escrow.description}</p>
-            <EscrowTimer escrow={escrow} size="normal" /> {/* Timer added here */}
+            <EscrowTimer escrow={escrow} size="normal" />
         </div>
 
-        {/* Tabs */}
         <div className="flex border-b border-gray-700 px-2 sm:px-4 md:px-6">
           <TabButton label="Details" isActive={activeTab === 'details'} onClick={() => setActiveTab('details')} icon={<Info size={16}/>} />
           <TabButton label="Chat Log" isActive={activeTab === 'chat'} onClick={() => setActiveTab('chat')} icon={<MessageSquare size={16}/>}/>
           <TabButton label="Evidence" isActive={activeTab === 'evidence'} onClick={() => setActiveTab('evidence')} icon={<FileText size={16}/>}/>
         </div>
 
-        {/* Tab Content */}
         {activeTab === 'details' && (
           <div className="p-6 md:p-8 bg-gray-750 rounded-b-lg">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
@@ -626,7 +543,6 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
             <p className="text-xs text-gray-500 mb-1">Multi-Sig Address: <span className="font-mono text-gray-400">{escrow.multiSigAddress}</span></p>
             <p className="text-xs text-gray-500 mb-6">Created: {formatDate(escrow.creationDate)} | Last Update: {formatDate(escrow.lastUpdateDate)}</p>
 
-            {/* Transaction Broadcasting Section - visible when user can fund */}
             {userRole === 'buyer' && canFund('buyer') && !escrow.buyer.hasFunded && (
               <div className="my-6 p-4 bg-gray-700 rounded-lg">
                 <h4 className="text-lg font-semibold text-teal-300 mb-2">Fund Escrow - Step 1: Prepare Transaction</h4>
@@ -688,7 +604,6 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
                   <div className="mt-3 p-3 bg-green-800/50 border border-green-700 text-green-300 rounded-md text-sm">
                     <p className="font-semibold">Broadcast Successful!</p>
                     <p>Transaction ID (TXID): <strong className="font-mono break-all">{broadcastTxId}</strong></p>
-                    {/* TODO: Add a link to a Monero block explorer */}
                      <a href={`https://xmrchain.net/tx/${broadcastTxId}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center text-teal-400 hover:text-teal-300 mt-1">
                       View on XMRChain.net <ExternalLink size={14} className="ml-1"/>
                     </a>
@@ -780,7 +695,6 @@ export const EscrowDetailPage: React.FC<EscrowDetailPageProps> = ({ escrows, upd
                 </div>
             )}
 
-            {/* EMERGENCY OVERRIDE SECTION - ADMIN ONLY */}
             {currentUser.username === 'admin' && !isTerminalState && (
               <div className="mt-8 p-4 bg-red-900/70 border border-red-700 rounded-lg">
                 <h3 className="text-xl font-bold text-red-300 mb-3 flex items-center">
