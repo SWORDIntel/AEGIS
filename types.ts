@@ -1,4 +1,3 @@
-
 export enum EscrowStatus {
   PENDING_FUNDING = 'Pending Funding',
   BUYER_FUNDED = 'Buyer Funded', 
@@ -6,7 +5,7 @@ export enum EscrowStatus {
   AWAITING_PARTICIPANT_ACTION = 'Awaiting Participant Action',
   ACTIVE = 'Active / Funded', 
   DISPUTE_INITIATED = 'Dispute Initiated',
-  EVIDENCE_SUBMISSION = 'Evidence Submission Phase', // Kept for potential future granularity
+  EVIDENCE_SUBMISSION = 'Evidence Submission Phase',
   ARBITER_REVIEW = 'Arbiter Review',
   RESOLUTION_REACHED = 'Resolution Reached', 
   COMPLETED_RELEASED = 'Completed - Funds Released',
@@ -67,6 +66,8 @@ export interface Escrow {
 export interface UserSettings {
   useTor: boolean;
   moneroNodeUrl: string;
+  totpEnabled?: boolean;
+  totpSecretMock?: string;
 }
 export interface UserProfile {
   id: string;
@@ -78,7 +79,6 @@ export interface UserProfile {
 }
 
 // Defines the shape of the object used to create a new escrow.
-// Omits fields that are auto-generated or derived during creation.
 export type AddEscrowInput = Omit<Escrow, 'id' | 'creationDate' | 'lastUpdateDate' | 'status' | 'chatLog' | 'arbiterInvolved' | 'arbiterId' | 'multiSigAddress' | 'buyer' | 'seller' | 'arbiterRuling'> & {
   buyerId: string;
   sellerId: string;
@@ -105,95 +105,90 @@ export interface AppNotification {
 
 export type AddNotificationHandler = (message: string, type: NotificationType) => void;
 
-// Monero Transaction and RPC Related Types
-
-export interface MoneroSubaddressIndex {
-  major: number; // Account index
-  minor: number; // Address index within the account
-}
-
+// Monero RPC Interaction Types
 export interface MoneroTransactionDestination {
+  amount: number;
   address: string;
-  amount: number; // Atomic units
 }
-
-export type MoneroTransferType = "in" | "out" | "pending" | "failed" | "pool";
 
 export interface MoneroTransaction {
-  txid: string;           // Transaction ID (hash)
-  type: MoneroTransferType; // Type of transfer
-  amount: number;         // Primary amount for this part of the transaction (atomic units)
-  fee: number;            // Transaction fee (atomic units)
-  height: number;         // Block height of confirmation (0 if not mined or pending)
-  timestamp: number;      // POSIX timestamp of confirmation or submission
-  unlock_time: number;    // Number of blocks until safely spendable
-
-  address?: string;        // The other party's address for outgoing, or own subaddress for incoming.
-  payment_id: string;     // Payment ID (often "0000000000000000" if not set)
-  note: string;           // User-provided note
-
-  confirmations?: number;  // Number of confirmations (can be 0 for pending/pool)
-  locked?: boolean;        // Whether the transaction/outputs are locked
-
-  subaddr_index?: MoneroSubaddressIndex;       // Own subaddress index involved
-  subaddr_indices?: MoneroSubaddressIndex[]; // Multiple own subaddresses involved (less common for a single tx entry)
-
-  amounts?: number[];      // If a single entry represents multiple distinct amounts (e.g. to multiple subaddresses in one tx)
-
-  // Primarily for outgoing transfers
-  destinations?: MoneroTransactionDestination[];
-
-  // Optional fields that might be present
-  double_spend_seen?: boolean;
-  suggested_confirmations_threshold?: number;
-
-  // Fields that might be more relevant for incoming transfers if enriched later,
-  // but `get_transfers` provides them per transfer entry
-  key_image?: string;
-  label?: string;          // Label of the subaddress
-  spent?: boolean;         // If this specific output (for incoming) has been spent
+  txid: string;
+  type: 'in' | 'out' | 'pool' | 'pending' | 'failed'; // Standard Monero RPC transfer types
+  amount: number; // Amount in piconeros
+  fee: number; // Fee in piconeros
+  timestamp: number; // Unix timestamp (seconds)
+  height: number; // Block height, 0 or negative for unconfirmed/pool
+  confirmations: number;
+  payment_id?: string;
+  note?: string; // User-provided note
+  destinations?: MoneroTransactionDestination[]; // For 'out' or 'pending' 'out'
 }
 
 export interface GetTransfersParams {
   in?: boolean;
   out?: boolean;
+  pool?: boolean;
   pending?: boolean;
   failed?: boolean;
-  pool?: boolean;
+  account_index?: number; // Defaults to 0 (primary account)
   filter_by_height?: boolean;
   min_height?: number;
-  max_height?: number;
-  account_index?: number;
-  subaddr_indices?: number[]; // Array of minor indices if account_index is specified
-  all_accounts?: boolean;
 }
 
-export interface GetTransfersResponse {
+export interface MoneroGetTransfersResponse {
   in?: MoneroTransaction[];
   out?: MoneroTransaction[];
+  pool?: MoneroTransaction[];
   pending?: MoneroTransaction[];
   failed?: MoneroTransaction[];
-  pool?: MoneroTransaction[];
 }
 
+/**
+ * Represents the typical response from the Monero daemon's /send_raw_transaction endpoint.
+ * The fields can vary slightly based on success or failure.
+ */
 export interface BroadcastTxResponse {
-  success: boolean;
-  txHash?: string; // Not directly from /send_raw_transaction, but kept for potential client-side derivation placeholder
-  status?: string; // e.g., "OK", "Failed", "BUSY"
-  reason?: string; // More detailed error message from the daemon
+  status: string; // "OK", "Failed", or other statuses.
+  tx_hash?: string; // Hash of the transaction if successfully broadcasted.
+  reason?: string; // Reason for failure, if any.
   double_spend?: boolean;
   fee_too_low?: boolean;
   invalid_input?: boolean;
   invalid_output?: boolean;
   low_mixin?: boolean;
-  not_rct?: boolean;
   not_relayed?: boolean;
   overspend?: boolean;
   too_big?: boolean;
-  // Additional fields that might be present in the daemon's response for /send_raw_transaction
-  tx_hash?: string; // This is actually the TX hash if successful and relayed, despite previous notes.
-  tx_key?: string; // If relayed
-  sanitized?: boolean;
-  credits?: number; // If RPC payment is enabled
-  top_hash?: string; // If RPC payment is enabled
+  tx_extra_too_big?: boolean;
+  // The daemon might also return an error object for more critical failures
+  error?: {
+    code: number;
+    message: string;
+  };
+  credits?: number;
+  top_hash?: string;
+  untrusted?: boolean;
+}
+
+/**
+ * Represents the response from the Monero daemon's `get_fee_estimate` RPC method.
+ * This is typically nested under a `result` field in the full JSON-RPC response.
+ */
+export interface MoneroFeeEstimateResponse {
+  status: string; // "OK" or error status.
+  fee: number; // Estimated fee per byte in piconeros.
+  fees?: number[]; // Estimated fees per byte for different priority levels (slow, normal, fast, fastest). Array indices correspond to priorities.
+  quantization_mask: number; // Fee quantization mask. Fees should be a multiple of this value.
+  fee_mask?: number; // Alias for quantization_mask (older daemons).
+  priority_mask?: number; // Mask for priorities available.
+  slow_fee?: number; // Fee for "slow" priority (older daemons, may not be present)
+  fast_fee?: number; // Fee for "fast" priority (older daemons, may not be present)
+  normal_fee?: number; // Fee for "normal" priority (older daemons, may not be present)
+  error?: {
+    code: number;
+    message: string;
+  };
+  credits?: number;
+  top_hash?: string;
+  untrusted?: boolean;
 }

@@ -1,5 +1,5 @@
 
-import { Escrow, UserProfile } from '../types'; // Added import
+import { Escrow, UserProfile } from './types'; // Corrected import path
 
 // Basic ID generator (replace with a robust library like UUID in a real app)
 export const generateId = (): string => {

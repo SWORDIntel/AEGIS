@@ -1,6 +1,6 @@
 {
   "name": "Aegis Protocol - Secure Escrow DApp",
-  "description": "A conceptual decentralized application for managing secure escrows with Monero, featuring dispute resolution and chat functionalities. For demonstration purposes only.",
+  "description": "A decentralized application for managing secure escrows with Monero, featuring dispute resolution and chat functionalities.",
   "requestFramePermissions": [],
   "prompt": ""
 }

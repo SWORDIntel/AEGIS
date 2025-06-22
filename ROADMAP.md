@@ -10,14 +10,14 @@ The current MVP provides an excellent visual and interactive concept. The next p
     *   `[✔️]` Provide extensive user education on the critical importance of self-custody and key security. (Warnings in AccountModal)
     *   `[✔️]` Secure generation of Monero mnemonic seeds. (Mock generation UI exists in AccountModal, now also updates demo keys)
     *   `[✔️]` Derivation of private/public view and spend keys. (Demo keys are updated upon mock mnemonic generation or restoration)
-    *   `[✔️]` Implement robust UI for key backup (displaying mnemonic) and **restoration.** (UI for backup and restoration with demo key updates in AccountModal)
-    *   `[ ]` Secure local encrypted storage of private keys (e.g., using browser's Web Crypto API with a user-derived password).
+    *   `[✔️]` Implement robust UI for key backup (displaying mnemonic) and **restoration.** (UI for backup and restoration with demo key updates in AccountModal, including encrypted mnemonic load/decryption flows)
+    *   `[〰️]` Secure local encrypted storage of private keys (e.g., using browser's Web Crypto API with a user-derived password). *(Conceptual UI for mnemonic encryption/decryption using Web Crypto & storage of encrypted mnemonic in localStorage implemented in AccountModal; derivation of real keys from this seed is the next step for full functionality).*
 2.  `[✔️]` **Monero Full Node Interaction:**
     *   `[✔️]` Allow users to configure connection to their own Monero full node (local or remote RPC). (Input field in AccountModal)
     *   `[✔️]` Implement functions to:
         *   Query blockchain height and sync status. (Mock display and refresh button in AccountModal)
         *   Check wallet balance (view-only initially). (Mock display and refresh button in AccountModal)
-        *   `[ ]` Scan for incoming/outgoing transactions relevant to the user.
+        *   `[〰️]` Scan for incoming/outgoing transactions relevant to the user. *(Conceptual UI for initiating scan and displaying mock/fetched transactions implemented in AccountModal, including call structure to a helper like `getWalletTransfers`; actual Monero RPC integration for the helper is pending).*
 3.  `[〰️]` **2-of-3 Multi-Signature Address Generation:**
     *   `[〰️]` Securely display and manage these multi-sig details within the escrow. (Mock multi-sig address displayed in EscrowDetailPage - remains `[〰️]` as is)
     *   `[ ]` Implement logic to generate Monero 2-of-3 multi-signature addresses using the public keys of the buyer, seller, and the assigned arbiter.
@@ -36,7 +36,7 @@ The current MVP provides an excellent visual and interactive concept. The next p
 ## Phase 2: Arbiter System - Backend & Basic Operations
 
 1.  `[ ]` **Secure Arbiter Backend Application:**
-    *   `[ ]` Develop a dedicated, secure server application (e.g., using Node.js/Express, Python/Flask, Go) for arbiters.
+    *   `[ ]` Develop a dedicated, secure server application (e.g., using Node.js/Express, Python/Flask, Go) for arbiters. *(Review ServerSecurity.md)*
     *   `[ ]` Implement arbiter authentication.
     *   `[ ]` Secure storage and management of arbiters' private keys (for their part of the multi-sig).
     *   `[ ]` API endpoints for:
@@ -81,7 +81,7 @@ The current MVP provides an excellent visual and interactive concept. The next p
 
 ## Ongoing Tasks
 
-*   `[〰️]` **Documentation:** (This ROADMAP.md file, code comments)
+*   `[〰️]` **Documentation:** (This ROADMAP.md file, ServerSecurity.md, Phase1_Tasks_JULES.md, README.md, code comments)
 *   `[ ]` **Community Building:** (Not applicable to code)
 *   `[ ]` **Support Infrastructure:** (Not applicable to code)
 *   `[ ]` **Continuous Integration/Continuous Deployment (CI/CD):** (Not applicable to code)
