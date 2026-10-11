@@ -85,3 +85,7 @@ Refer to `ROADMAP.md` for a detailed plan on future development phases, includin
 *   `[✔️]` `STUBS.md`: Outlines backend functionalities needed for a full system.
 *   `[✔️]` `README.md`: This file.
 *   `[✔️]` `metadata.json`: Project metadata.
+
+## License
+
+This project is licensed under the **SWORD Restricted Source Licence v1.0 (SRSL-1.0)**. Personal and non-commercial use is permitted under its terms; commercial exploitation requires a separate written agreement. See [LICENSE](LICENSE).
